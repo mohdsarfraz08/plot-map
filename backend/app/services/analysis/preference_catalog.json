@@ -1,0 +1,142 @@
+{
+  "version": "3B.5-2.v1",
+  "provenance": {
+    "author": "BUILDForgeAI Strategy Architecture",
+    "description": "Declarative preference and scoring catalog for Stage 3B.5 ranking and candidate selection",
+    "stage": "3B.5-2"
+  },
+  "deterministic_precision": 6,
+  "selection_thresholds": {
+    "selected_min_score": 0.8,
+    "viable_min_score": 0.6,
+    "marginal_min_score": 0.4,
+    "rejected_max_score": 0.4
+  },
+  "tie_break": {
+    "priority_criteria": [
+      "program_usability",
+      "privacy_compliance",
+      "circulation_efficiency",
+      "service_core_stacking",
+      "realization_feasibility",
+      "objective_alignment"
+    ],
+    "fallback_strategy": "candidate_id"
+  },
+  "criteria": [
+    {
+      "id": "program_usability",
+      "description": "Evaluates programmatic space allocation, spatial adjacency, and functional usability alignment.",
+      "weight": 0.25,
+      "normalization": {
+        "method": "min_max",
+        "min_value": 0.0,
+        "max_value": 1.0,
+        "invert": false
+      },
+      "thresholds": {
+        "min_passing_score": 0.5,
+        "preferred_threshold": 0.75
+      },
+      "metadata": {
+        "category": "functional",
+        "provenance_source": "arch_usability_spec"
+      }
+    },
+    {
+      "id": "privacy_compliance",
+      "description": "Evaluates acoustic, visual, and programmatic privacy gradients and zoning compliance.",
+      "weight": 0.20,
+      "normalization": {
+        "method": "min_max",
+        "min_value": 0.0,
+        "max_value": 1.0,
+        "invert": false
+      },
+      "thresholds": {
+        "min_passing_score": 0.5,
+        "preferred_threshold": 0.70
+      },
+      "metadata": {
+        "category": "zoning",
+        "provenance_source": "privacy_gradient_rules"
+      }
+    },
+    {
+      "id": "circulation_efficiency",
+      "description": "Evaluates pathway compactness, travel distances, and vertical/horizontal circulation continuity.",
+      "weight": 0.15,
+      "normalization": {
+        "method": "min_max",
+        "min_value": 0.0,
+        "max_value": 1.0,
+        "invert": false
+      },
+      "thresholds": {
+        "min_passing_score": 0.4,
+        "preferred_threshold": 0.70
+      },
+      "metadata": {
+        "category": "circulation",
+        "provenance_source": "movement_efficiency_spec"
+      }
+    },
+    {
+      "id": "service_core_stacking",
+      "description": "Evaluates service core alignment, MEP riser continuity, and structural/plumbing stacking efficiency.",
+      "weight": 0.15,
+      "normalization": {
+        "method": "min_max",
+        "min_value": 0.0,
+        "max_value": 1.0,
+        "invert": false
+      },
+      "thresholds": {
+        "min_passing_score": 0.4,
+        "preferred_threshold": 0.65
+      },
+      "metadata": {
+        "category": "infrastructure",
+        "provenance_source": "core_stacking_guidelines"
+      }
+    },
+    {
+      "id": "realization_feasibility",
+      "description": "Evaluates compiler realization feasibility, structural span reasonableness, and layout constructability.",
+      "weight": 0.15,
+      "normalization": {
+        "method": "min_max",
+        "min_value": 0.0,
+        "max_value": 1.0,
+        "invert": false
+      },
+      "thresholds": {
+        "min_passing_score": 0.5,
+        "preferred_threshold": 0.70
+      },
+      "metadata": {
+        "category": "constructability",
+        "provenance_source": "realization_compiler_spec"
+      }
+    },
+    {
+      "id": "objective_alignment",
+      "description": "Evaluates alignment with high-level user-defined architectural objectives and qualitative intent.",
+      "weight": 0.10,
+      "normalization": {
+        "method": "min_max",
+        "min_value": 0.0,
+        "max_value": 1.0,
+        "invert": false
+      },
+      "thresholds": {
+        "min_passing_score": 0.3,
+        "preferred_threshold": 0.60
+      },
+      "metadata": {
+        "category": "intent",
+        "provenance_source": "design_intent_manifest"
+      }
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 **Phase**: 3 — Architectural Reasoning / Phase 6 — Optimization & Ranking  
 **Stage**: Stage 3B.5 — Strategy Ranking & Candidate Selection  
-**Document Status**: Canonical Architecture Specification — Stage 3B.5 Planned  
+**Document Status**: Canonical Architecture Specification — Stage 3B.5 COMPLETE ✅
 
 ---
 
@@ -372,11 +372,58 @@ Stage 3B.5 is organized into 6 safe, sequential sub-stages:
 ## 16. Acceptance Criteria
 
 Stage 3B.5 is complete when:
-- [ ] `strategy_ranking.py` schema contracts fully defined and tested.
-- [ ] Scoring weights and criteria rules loaded declaratively from `preference_catalog.json`.
-- [ ] `AbstractStrategicScorer` scores non-geometric candidates deterministically before realization.
-- [ ] `SpatialRealizationScorer` scores post-realization results without modifying solver logic.
-- [ ] `CandidateSelector` applies deterministic tie-breaking and selection status assignment.
-- [ ] Failed/infeasible candidates receive `REJECTED` status with explicit rejection reasons without crashing.
-- [ ] AST checks confirm ZERO domain-specific Python `if/elif` branches in scoring evaluators.
-- [ ] All golden ranking fixtures pass cleanly and full regression test suite passes 100% green.
+- [x] `strategy_ranking.py` schema contracts fully defined and tested.
+- [x] Scoring weights and criteria rules loaded declaratively from `preference_catalog.json`.
+- [x] `AbstractStrategicScorer` scores non-geometric candidates deterministically before realization.
+- [x] `SpatialRealizationScorer` scores post-realization results without modifying solver logic.
+- [x] `CandidateSelector` applies deterministic tie-breaking and selection status assignment.
+- [x] Failed/infeasible candidates receive `REJECTED` status with explicit rejection reasons without crashing.
+- [x] AST checks confirm ZERO domain-specific Python `if/elif` branches in scoring evaluators.
+- [x] All golden ranking fixtures pass cleanly and full regression test suite passes 100% green.
+
+---
+
+## 17. Implementation & Verification Summary
+
+Stage 3B.5 is **100% COMPLETE**.
+
+### Sub-stage Implementation Deliverables
+
+- **Stage 3B.5-1: Strategy Ranking & Selection Schema Contracts** ✅
+  - Schema File: [`backend/app/schemas/strategy_ranking.py`](file:///c:/Users/affaa/OneDrive/Desktop/BuildForge/backend/app/schemas/strategy_ranking.py)
+  - Test File: [`backend/tests/test_strategy_ranking_schema.py`](file:///c:/Users/affaa/OneDrive/Desktop/BuildForge/backend/tests/test_strategy_ranking_schema.py)
+  - Deliverables: `SelectionStatus`, `CriterionScore`, `ScoreBreakdown`, `RankedCandidate`, `RankingResult`. Strictly non-geometric.
+
+- **Stage 3B.5-2: Declarative Preference & Scoring Catalog** ✅
+  - Files:
+    - [`backend/app/services/analysis/preference_catalog.json`](file:///c:/Users/affaa/OneDrive/Desktop/BuildForge/backend/app/services/analysis/preference_catalog.json)
+    - [`backend/app/schemas/strategy_preference.py`](file:///c:/Users/affaa/OneDrive/Desktop/BuildForge/backend/app/schemas/strategy_preference.py)
+    - [`backend/app/services/analysis/catalog_loader.py`](file:///c:/Users/affaa/OneDrive/Desktop/BuildForge/backend/app/services/analysis/catalog_loader.py)
+  - Test File: [`backend/tests/test_strategy_preference_catalog.py`](file:///c:/Users/affaa/OneDrive/Desktop/BuildForge/backend/tests/test_strategy_preference_catalog.py)
+  - Deliverables: Declarative criteria (`program_usability`: 0.25, `privacy_compliance`: 0.20, `circulation_efficiency`: 0.15, `service_core_stacking`: 0.15, `realization_feasibility`: 0.15, `objective_alignment`: 0.10), selection thresholds, tie-break rules, precision (6).
+
+- **Stage 3B.5-3: Phase 1 Abstract Strategic Scorer** ✅
+  - Implementation File: [`backend/app/services/ranking/abstract_strategic_scorer.py`](file:///c:/Users/affaa/OneDrive/Desktop/BuildForge/backend/app/services/ranking/abstract_strategic_scorer.py)
+  - Test File: [`backend/tests/test_abstract_strategic_scorer.py`](file:///c:/Users/affaa/OneDrive/Desktop/BuildForge/backend/tests/test_abstract_strategic_scorer.py)
+  - Deliverables: Pre-realization abstract strategic evaluation engine. Evaluates candidate topology, objectives, risks, confidence, and feasibility expectations before 2D spatial layout solver runs.
+
+- **Stage 3B.5-4: Phase 2 Spatial Realization Scorer** ✅
+  - Implementation File: [`backend/app/services/ranking/spatial_realization_scorer.py`](file:///c:/Users/affaa/OneDrive/Desktop/BuildForge/backend/app/services/ranking/spatial_realization_scorer.py)
+  - Test File: [`backend/tests/test_spatial_realization_scorer.py`](file:///c:/Users/affaa/OneDrive/Desktop/BuildForge/backend/tests/test_spatial_realization_scorer.py)
+  - Deliverables: Post-realization spatial scorer. Evaluates `RealizationResult` evidence (`SUCCESS`, `INVALID_CANDIDATE`, `UNSUPPORTED_SPEC`, `SPATIALLY_INFEASIBLE`, `SOLVER_TIMEOUT`, `SOLVER_ERROR`), room counts, core stacking, and failure provenance without rerunning solvers or mutating geometry.
+
+- **Stage 3B.5-5: Candidate Selector & Deterministic Tie-Breaking** ✅
+  - Implementation File: [`backend/app/services/ranking/candidate_selector.py`](file:///c:/Users/affaa/OneDrive/Desktop/BuildForge/backend/app/services/ranking/candidate_selector.py)
+  - Test File: [`backend/tests/test_candidate_selector.py`](file:///c:/Users/affaa/OneDrive/Desktop/BuildForge/backend/tests/test_candidate_selector.py)
+  - Deliverables: Deterministic candidate selection and tie-breaking engine. Applies catalog tie-break cascade (total score $\to$ priority criteria $\to$ candidate ID string fallback), selection thresholds, and max selection limits without mutating input candidates.
+
+- **Stage 3B.5-6: Golden Ranking Tests & Final Regression Verification** ✅
+  - Fixture File: [`backend/tests/fixtures/golden_strategy_ranking_fixtures.py`](file:///c:/Users/affaa/OneDrive/Desktop/BuildForge/backend/tests/fixtures/golden_strategy_ranking_fixtures.py)
+  - Test File: [`backend/tests/test_golden_strategy_ranking.py`](file:///c:/Users/affaa/OneDrive/Desktop/BuildForge/backend/tests/test_golden_strategy_ranking.py)
+  - Deliverables: 40 golden verification tests covering benchmark 44x42, single-family, shared/independent/hybrid circulation topologies, all 6 `RealizationStatus` states, 50-iteration determinism checks, immutability, provenance, custom unseen decision dimensions, and AST boundary guards.
+
+### Actual Pytest Verification Results
+- **Focused Golden Suite**: `40 / 40 passed in 4.63s`
+- **Full Regression Suite**: `498 / 498 passed, 1 warning in 158.69s` across 23 test modules
+- **Protected Files Audit**: `0 diffs` (Protected production engine files remain untouched)
+

@@ -18,8 +18,10 @@ from app.schemas.architectural_analysis import (
     OrganizationRule,
     RelationshipImpact,
 )
+from app.schemas.strategy_preference import PreferenceCatalog
 
 _DEFAULT_CATALOG_PATH = Path(__file__).parent / "decision_catalog.json"
+_DEFAULT_PREFERENCE_CATALOG_PATH = Path(__file__).parent / "preference_catalog.json"
 
 
 def _dim_to_str(dim: Any) -> str:
@@ -169,4 +171,51 @@ def get_catalog_organization_rules(
             )
 
     return rules
+
+
+def load_preference_catalog(catalog_path: str | Path | None = None) -> PreferenceCatalog:
+    """
+    Load, parse, and validate declarative preference catalog from JSON file.
+    Raises FileNotFoundError if missing, ValueError if malformed or invalid.
+    """
+    target_path = Path(catalog_path) if catalog_path else _DEFAULT_PREFERENCE_CATALOG_PATH
+
+    if not target_path.exists():
+        raise FileNotFoundError(f"Preference catalog file not found at: {target_path}")
+
+    try:
+        with open(target_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as err:
+        raise ValueError(f"Malformed JSON in preference catalog '{target_path}': {err}") from err
+
+    if not isinstance(data, dict):
+        raise ValueError(f"Preference catalog root must be a JSON object, got {type(data).__name__}")
+
+    try:
+        return PreferenceCatalog.model_validate(data)
+    except Exception as err:
+        raise ValueError(f"Failed to validate preference catalog: {err}") from err
+
+
+def get_preference_catalog(
+    catalog: dict[str, Any] | PreferenceCatalog | None = None,
+    catalog_path: str | Path | None = None,
+) -> PreferenceCatalog:
+    """
+    Retrieve validated PreferenceCatalog instance.
+    If catalog is provided as a dict or PreferenceCatalog, returns parsed/validated instance.
+    Otherwise loads from catalog_path or default preference_catalog.json.
+    """
+    if isinstance(catalog, PreferenceCatalog):
+        return catalog
+    if isinstance(catalog, dict):
+        try:
+            return PreferenceCatalog.model_validate(catalog)
+        except Exception as err:
+            raise ValueError(f"Failed to validate preference catalog from dict: {err}") from err
+    if catalog is not None:
+        raise ValueError(f"Invalid catalog type: {type(catalog).__name__}")
+
+    return load_preference_catalog(catalog_path=catalog_path)
 
