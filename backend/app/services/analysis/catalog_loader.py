@@ -14,6 +14,8 @@ from app.schemas.architectural_analysis import (
     DecisionDimension,
     DimensionRelationship,
     IncompatibilityRule,
+    OrganizationAction,
+    OrganizationRule,
     RelationshipImpact,
 )
 
@@ -132,3 +134,39 @@ def get_catalog_relationships(
             )
 
     return relationships
+
+
+def get_catalog_organization_rules(
+    catalog: dict[str, Any] | None = None,
+) -> list[OrganizationRule]:
+    """Extract validated OrganizationRule objects declared in decision catalog."""
+    if catalog is None:
+        catalog = load_decision_catalog()
+
+    rules: list[OrganizationRule] = []
+    raw_list = catalog.get("organization_rules", [])
+    if not isinstance(raw_list, list):
+        return rules
+
+    for raw in raw_list:
+        if isinstance(raw, dict):
+            try:
+                action_val = OrganizationAction(str(raw["action"]))
+            except (KeyError, ValueError) as err:
+                raise ValueError(f"Invalid OrganizationAction in catalog rule '{raw.get('id')}': {err}") from err
+
+            rules.append(
+                OrganizationRule(
+                    id=str(raw.get("id", f"org-rule-{len(rules)+1}")),
+                    trigger_dimension=str(raw["trigger_dimension"]),
+                    trigger_value=raw["trigger_value"],
+                    action=action_val,
+                    target_collection=str(raw["target_collection"]),
+                    parameters=dict(raw.get("parameters", {})),
+                    explanation=str(raw.get("explanation", "")),
+                    source_ids=list(raw.get("source_ids", [])),
+                )
+            )
+
+    return rules
+

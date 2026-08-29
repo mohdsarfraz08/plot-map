@@ -225,6 +225,87 @@ class FeasibilityConcern(BaseModel):
         return v
 
 
+class OrganizationAction(str, Enum):
+    GROUP_BY_ATTRIBUTE = "group_by_attribute"
+    ASSIGN_FLOOR_TIER = "assign_floor_tier"
+    CREATE_CIRCULATION_NODE = "create_circulation_node"
+    CREATE_SERVICE_STACK = "create_service_stack"
+
+
+_PROHIBITED_GEOMETRIC_KEYS = {
+    "coordinates",
+    "polygon",
+    "polygons",
+    "rectangle",
+    "rectangles",
+    "bounding_box",
+    "x",
+    "y",
+    "z",
+    "wall",
+    "walls",
+    "door",
+    "doors",
+    "window",
+    "windows",
+    "cad",
+    "mesh",
+    "tbm",
+    "pulp",
+    "cbc",
+    "geometry",
+}
+
+
+def _verify_no_geometric_keys(val: Any) -> bool:
+    """Helper to recursively ensure no geometric keys or prohibited objects exist in raw data structures."""
+    if isinstance(val, dict):
+        for k, v in val.items():
+            if isinstance(k, str) and k.lower() in _PROHIBITED_GEOMETRIC_KEYS:
+                return False
+            if not _verify_no_geometric_keys(v):
+                return False
+    elif isinstance(val, (list, tuple)):
+        for item in val:
+            if not _verify_no_geometric_keys(item):
+                return False
+    return True
+
+
+class OrganizationRule(BaseModel):
+    id: str
+    trigger_dimension: DecisionDimension | str
+    trigger_value: Any
+    action: OrganizationAction
+    target_collection: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    explanation: str
+    source_ids: list[str] = Field(default_factory=list)
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("OrganizationRule id cannot be empty")
+        return v
+
+    @field_validator("trigger_dimension", "target_collection", "explanation")
+    @classmethod
+    def validate_non_empty_str(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("OrganizationRule string fields cannot be empty")
+        return v
+
+    @field_validator("trigger_value", "parameters")
+    @classmethod
+    def validate_serializable_and_non_geometric(cls, v: Any) -> Any:
+        if not _is_serializable_value(v):
+            raise ValueError("OrganizationRule trigger_value and parameters must be JSON-serializable types")
+        if not _verify_no_geometric_keys(v):
+            raise ValueError("OrganizationRule strictly forbids geometric/CAD/mesh/solver attributes")
+        return v
+
+
 class ArchitecturalAnalysis(BaseModel):
     problem_id: str
     problem_version: int = Field(..., ge=1)
@@ -241,6 +322,7 @@ class ArchitecturalAnalysis(BaseModel):
     feasibility_concerns: list[FeasibilityConcern] = Field(default_factory=list)
     incompatibilities: list[IncompatibilityRule] = Field(default_factory=list)
     relationships: list[DimensionRelationship] = Field(default_factory=list)
+    organization_rules: list[OrganizationRule] = Field(default_factory=list)
     provenance: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -254,9 +336,10 @@ class ArchitecturalAnalysis(BaseModel):
             self.feasibility_concerns,
             self.incompatibilities,
             self.relationships,
+            self.organization_rules,
         )
         for collection in collections:
             ids = [item.id for item in collection]
             if len(ids) != len(set(ids)):
                 raise ValueError("IDs must be unique within each ArchitecturalAnalysis collection")
-        return self
+        return self

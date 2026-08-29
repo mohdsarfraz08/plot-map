@@ -55,5 +55,73 @@
       "explanation": "Shared vertical circulation increases shared access interactions.",
       "severity": "info"
     }
+  ],
+  "organization_rules": [
+    {
+      "id": "org-unit-grouped",
+      "trigger_dimension": "unit_organization",
+      "trigger_value": "grouped",
+      "action": "group_by_attribute",
+      "target_collection": "unit_organization",
+      "parameters": {
+        "attribute": "owner_id",
+        "fallback_prefix": "unit_"
+      },
+      "explanation": "Group spaces sharing an owner_id into dedicated unit containers."
+    },
+    {
+      "id": "org-circ-shared-vertical",
+      "trigger_dimension": "vertical_circulation",
+      "trigger_value": "shared",
+      "action": "create_circulation_node",
+      "target_collection": "circulation_intent",
+      "parameters": {
+        "node_id": "circ-shared-vertical-core",
+        "type": "vertical_stairwell",
+        "access_type": "shared",
+        "target_scope": "all_units"
+      },
+      "explanation": "Shared vertical circulation connects all units to a primary shared stair core."
+    },
+    {
+      "id": "org-service-central-wet",
+      "trigger_dimension": "service_core_strategy",
+      "trigger_value": "centralized",
+      "action": "create_service_stack",
+      "target_collection": "service_organization",
+      "parameters": {
+        "stack_id": "stack-central-wet-core",
+        "service_type": "plumbing_wet_core",
+        "target_scope": "by_category",
+        "categories": ["bathroom", "kitchen"]
+      },
+      "explanation": "Centralized service core groups wet spaces into a common plumbing stack."
+    },
+    {
+      "id": "org-floor-ground-only",
+      "trigger_dimension": "floor_allocation",
+      "trigger_value": "ground_floor_only",
+      "action": "assign_floor_tier",
+      "target_collection": "floor_organization",
+      "parameters": {
+        "tier_mapping": {
+          "all_spaces": "floor_1"
+        }
+      },
+      "explanation": "Ground floor strategy assigns all program spaces to floor_1."
+    },
+    {
+      "id": "org-floor-distributed",
+      "trigger_dimension": "floor_allocation",
+      "trigger_value": "distributed",
+      "action": "assign_floor_tier",
+      "target_collection": "floor_organization",
+      "parameters": {
+        "tier_mapping": {
+          "by_unit": "even_distribution"
+        }
+      },
+      "explanation": "Distributed floor allocation distributes units across available site floors."
+    }
   ]
 }
