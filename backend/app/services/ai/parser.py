@@ -6,9 +6,12 @@ from app.schemas.intent import CompilerIntent, RoomCategory, RoomIntent
 
 PARSER_SYSTEM_PROMPT = (
     "You are a deterministic Natural Language Parser for an architectural constraint engine. "
-    "Your ONLY objective is to extract parameters into strict JSON. DO NOT design the house. "
-    "DO NOT calculate coordinates. If a user asks for a 'G+1' house, that equals 2 floors. "
-    "Use standard Indian minimums if dimensions are missing."
+    "Your ONLY objective is to extract parameters into strict JSON according to CompilerIntent schema. "
+    "DO NOT design the house. DO NOT calculate coordinates. If a user asks for a 'G+1' house, that equals 2 floors. "
+    "Extract architectural circulation preferences (vertical_circulation: 'shared', 'independent', 'hybrid'), "
+    "floor allocation (floor_allocation: 'ground_floor_only', 'distributed'), number of families (families_count), "
+    "unit organization ('grouped', 'distributed', 'stacked'), and entrance strategy ('shared', 'independent', 'controlled_shared'). "
+    "Use standard Indian minimums if room dimensions are missing."
 )
 
 def parse_requirements_fallback(prompt: str) -> CompilerIntent:
@@ -16,6 +19,8 @@ def parse_requirements_fallback(prompt: str) -> CompilerIntent:
     Fallback parser using regular expressions to extract parameters from unstructured prompts
     when the Gemini API is unavailable or fails.
     """
+    prompt_lower = prompt.lower()
+
     # 1. Parse plot dimensions (e.g., "40x40", "30x40", "43.75x41")
     width, depth = 40.0, 40.0
     dim_match = re.search(r'(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)', prompt)
@@ -42,7 +47,7 @@ def parse_requirements_fallback(prompt: str) -> CompilerIntent:
     # 4. Parse rooms based on enum category matches
     rooms = []
     for cat in RoomCategory:
-        if cat.value in prompt.lower():
+        if cat.value in prompt_lower:
             count = 1
             # Check for counts (e.g., "2 bedrooms")
             count_match = re.search(r'(\d+)\s*' + cat.value, prompt, re.IGNORECASE)
@@ -59,14 +64,56 @@ def parse_requirements_fallback(prompt: str) -> CompilerIntent:
             RoomIntent(room_type=RoomCategory.KITCHEN),
             RoomIntent(room_type=RoomCategory.BATHROOM)
         ]
-        
+
+    # 5. Parse families count (e.g., "2 families", "for each family")
+    families_count = 1
+    family_match = re.search(r'(\d+)\s*(?:families|family|units|unit)', prompt_lower)
+    if family_match:
+        families_count = max(1, int(family_match.group(1)))
+    elif "each family" in prompt_lower or "both families" in prompt_lower:
+        families_count = 2
+
+    # 6. Parse vertical circulation strategy
+    vertical_circulation = None
+    if any(k in prompt_lower for k in ["separate stair", "private stair", "separate/private stair", "independent stair", "individual stair"]):
+        vertical_circulation = "independent"
+    elif any(k in prompt_lower for k in ["shared stair", "common stair", "one stair", "single stair", "one shared"]):
+        vertical_circulation = "shared"
+    elif "hybrid stair" in prompt_lower:
+        vertical_circulation = "hybrid"
+
+    # 7. Parse floor allocation strategy
+    floor_allocation = None
+    if any(k in prompt_lower for k in ["ground floor only", "on the ground floor", "all families on the ground", "ground floor"]):
+        floor_allocation = "ground_floor_only"
+    elif any(k in prompt_lower for k in ["distributed across floors", "across floors", "on each floor", "across both floors", "separate floors"]):
+        floor_allocation = "distributed"
+
+    # 8. Parse entrance and unit organization
+    entrance_strategy = None
+    if any(k in prompt_lower for k in ["private entrance", "separate entrance", "independent entrance", "private access", "separate access", "independent access", "private stair"]):
+        entrance_strategy = "independent"
+        if not vertical_circulation:
+            vertical_circulation = "independent"
+    elif any(k in prompt_lower for k in ["shared entrance", "common entrance", "shared access"]):
+        entrance_strategy = "shared"
+
+    unit_organization = None
+    if families_count > 1:
+        unit_organization = "grouped"
+
     return CompilerIntent(
         plot_width=width,
         plot_depth=depth,
         floors=floors,
         front_road_setback=setback,
         confidence_score=0.5,
-        rooms=rooms
+        rooms=rooms,
+        vertical_circulation=vertical_circulation,
+        floor_allocation=floor_allocation,
+        families_count=families_count,
+        unit_organization=unit_organization,
+        entrance_strategy=entrance_strategy,
     )
 
 def parse_requirements(
@@ -141,10 +188,10 @@ def parse_intent_to_layout(
     Dynamically scales room sizes based on the available buildable area to guarantee solver feasibility.
     """
     # 1. Calculate buildable area
-    sb_left = float(setbacks.get('left', setbacks.get('left', 0.0)))
-    sb_right = float(setbacks.get('right', setbacks.get('right', 0.0)))
-    sb_bottom = float(setbacks.get('bottom', setbacks.get('front', 0.0)))
-    sb_top = float(setbacks.get('top', setbacks.get('back', 0.0)))
+    sb_left = float(setbacks.get('left') or 0.0)
+    sb_right = float(setbacks.get('right') or 0.0)
+    sb_bottom = float(setbacks.get('bottom') or setbacks.get('front') or 0.0)
+    sb_top = float(setbacks.get('top') or setbacks.get('back') or 0.0)
     
     buildable_width = max(0.0, plot_width - sb_left - sb_right)
     buildable_depth = max(0.0, plot_depth - sb_bottom - sb_top)
@@ -381,13 +428,13 @@ def parse_intent_to_layout(
         adjacencies.append(("Living Room", "Common Bath"))
         
     # 6. Safety check: scale down rooms if total exceeds 40% of net buildable area
-    total_requested_area = sum(r["min_area"] for r in rooms_config)
+    total_requested_area = sum(float(r["min_area"]) for r in rooms_config)
     safety_target_area = 0.40 * net_buildable_area
     if total_requested_area > safety_target_area:
         scale_factor = safety_target_area / total_requested_area
         scale_factor_dim = math.sqrt(scale_factor)
         for r in rooms_config:
-            scaled_area = r["min_area"] * scale_factor
+            scaled_area = float(r["min_area"]) * scale_factor
             
             abs_min = 80.0
             if r["type"] == "Entrance":
@@ -400,8 +447,8 @@ def parse_intent_to_layout(
                 abs_min = 80.0
                 
             r["min_area"] = max(abs_min, scaled_area)
-            r["min_width"] = max(3.0, r["min_width"] * scale_factor_dim)
-            r["min_height"] = max(3.0, r["min_height"] * scale_factor_dim)
+            r["min_width"] = max(3.0, float(r["min_width"]) * scale_factor_dim)
+            r["min_height"] = max(3.0, float(r["min_height"]) * scale_factor_dim)
             
     return {
         "stair_core": stair_core,

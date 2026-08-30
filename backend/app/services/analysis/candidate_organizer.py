@@ -134,14 +134,32 @@ def _execute_assign_floor_tier(
             unit_keys = ["unit_default"]
             unit_org["unit_default"] = all_spaces
 
-        for idx, ukey in enumerate(unit_keys):
-            floor_idx = (idx % num_floors) + 1
-            tier_id = f"floor_{floor_idx}"
-            if tier_id not in floor_org:
-                floor_org[tier_id] = []
-            for s in unit_org[ukey]:
-                if s not in floor_org[tier_id]:
-                    floor_org[tier_id].append(s)
+        if len(unit_keys) > 1:
+            for idx, ukey in enumerate(unit_keys):
+                floor_idx = (idx % num_floors) + 1
+                tier_id = f"floor_{floor_idx}"
+                if tier_id not in floor_org:
+                    floor_org[tier_id] = []
+                for s in unit_org[ukey]:
+                    if s not in floor_org[tier_id]:
+                        floor_org[tier_id].append(s)
+        else:
+            all_spaces = unit_org[unit_keys[0]] if unit_keys else ([s.id for s in problem.spaces] if problem and problem.spaces else [])
+            if num_floors > 1 and len(all_spaces) > 1:
+                for s_idx, s in enumerate(all_spaces):
+                    floor_idx = (s_idx % num_floors) + 1
+                    tier_id = f"floor_{floor_idx}"
+                    if tier_id not in floor_org:
+                        floor_org[tier_id] = []
+                    if s not in floor_org[tier_id]:
+                        floor_org[tier_id].append(s)
+            else:
+                tier_id = "floor_1"
+                if tier_id not in floor_org:
+                    floor_org[tier_id] = []
+                for s in all_spaces:
+                    if s not in floor_org[tier_id]:
+                        floor_org[tier_id].append(s)
 
     elif "explicit_floors" in params and isinstance(params["explicit_floors"], dict):
         for ftier, spaces in params["explicit_floors"].items():

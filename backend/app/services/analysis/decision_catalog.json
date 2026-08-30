@@ -84,6 +84,20 @@
       "explanation": "Shared vertical circulation connects all units to a primary shared stair core."
     },
     {
+      "id": "org-circ-independent-vertical",
+      "trigger_dimension": "vertical_circulation",
+      "trigger_value": "independent",
+      "action": "create_circulation_node",
+      "target_collection": "circulation_intent",
+      "parameters": {
+        "node_id": "circ-private-vertical-core",
+        "type": "vertical_stairwell",
+        "access_type": "private",
+        "target_scope": "all_units"
+      },
+      "explanation": "Independent vertical circulation provides private stair access cores for units."
+    },
+    {
       "id": "org-service-central-wet",
       "trigger_dimension": "service_core_strategy",
       "trigger_value": "centralized",

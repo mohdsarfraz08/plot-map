@@ -51,20 +51,26 @@ _FLEXIBLE_DIMENSIONS = (
 )
 
 
-def _unique_in_order(values: Iterable[DecisionDimension]) -> list[DecisionDimension]:
+def _unique_in_order(values: Iterable[Any]) -> list[Any]:
     return list(dict.fromkeys(values))
 
 
 def _requirement_dimensions(requirement: Requirement) -> list[DecisionDimension]:
+    # Check if requirement subject explicitly identifies a DecisionDimension
+    subj_str = requirement.subject.lower() if isinstance(requirement.subject, str) else ""
+    for dim in DecisionDimension:
+        if dim.value == subj_str:
+            return [dim]
+
     mapping = {
         RequirementKind.SITE: DecisionDimension.SITE_RESPONSE,
         RequirementKind.SPACE: DecisionDimension.PROGRAM_DEFINITION,
         RequirementKind.QUANTITY: DecisionDimension.SPACE_QUANTITY,
         RequirementKind.ASSIGNMENT: DecisionDimension.FLOOR_ALLOCATION,
-        RequirementKind.CIRCULATION: DecisionDimension.CIRCULATION,
-        RequirementKind.ACCESSIBILITY: DecisionDimension.ACCESSIBILITY,
+        RequirementKind.CIRCULATION: DecisionDimension.VERTICAL_CIRCULATION if "vert" in subj_str or "stair" in subj_str else DecisionDimension.CIRCULATION,
+        RequirementKind.ACCESSIBILITY: DecisionDimension.ENTRANCE_STRATEGY if "entrance" in subj_str else DecisionDimension.ACCESSIBILITY,
         RequirementKind.PRIVACY: DecisionDimension.PRIVACY,
-        RequirementKind.RELATIONSHIP: DecisionDimension.SHARED_PRIVATE_STRATEGY,
+        RequirementKind.RELATIONSHIP: DecisionDimension.UNIT_ORGANIZATION if "unit" in subj_str else DecisionDimension.SHARED_PRIVATE_STRATEGY,
         RequirementKind.ENVIRONMENTAL: DecisionDimension.ENVIRONMENTAL_RESPONSE,
         RequirementKind.REGULATORY: DecisionDimension.REGULATORY_STRATEGY,
         RequirementKind.COST: DecisionDimension.COST_STRATEGY,
@@ -91,7 +97,7 @@ def _explicit_decisions(problem: DesignProblem) -> list[DecisionRecord]:
         ),
         DecisionRecord(
             id="floor-count",
-            dimension=DecisionDimension.FLOOR_ALLOCATION,
+            dimension=DecisionDimension.SITE_RESPONSE,
             subject="building",
             value=problem.site.floors,
             source_ids=["site.floors"],
@@ -141,11 +147,7 @@ def _flexible_decisions(
     fixed: list[DecisionRecord],
     catalog: dict[str, Any] | None = None,
 ) -> list[DecisionRecord]:
-    fixed_dimensions = {
-        decision.dimension
-        for decision in fixed
-        if decision.dimension is not DecisionDimension.FLOOR_ALLOCATION
-    }
+    fixed_dimensions = {decision.dimension for decision in fixed}
     flexible: list[DecisionRecord] = []
     for dimension in _FLEXIBLE_DIMENSIONS:
         if dimension not in fixed_dimensions:

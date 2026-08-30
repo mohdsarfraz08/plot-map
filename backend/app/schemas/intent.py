@@ -70,3 +70,23 @@ class CompilerIntent(BaseModel):
         default_factory=list,
         description="List of rooms to pack into the floor layout."
     )
+    vertical_circulation: str | None = Field(
+        None,
+        description="Staircase / circulation strategy: 'shared', 'independent' (separate/private), or 'hybrid'."
+    )
+    floor_allocation: str | None = Field(
+        None,
+        description="Floor distribution strategy: 'ground_floor_only' (all families/units on ground floor) or 'distributed' (distributed across floors)."
+    )
+    families_count: int = Field(
+        1,
+        description="Number of families or units requested (e.g. 2 families). Defaults to 1."
+    )
+    unit_organization: str | None = Field(
+        None,
+        description="Unit organization strategy: 'grouped', 'distributed', or 'stacked'."
+    )
+    entrance_strategy: str | None = Field(
+        None,
+        description="Entrance strategy: 'shared', 'independent', or 'controlled_shared'."
+    )
