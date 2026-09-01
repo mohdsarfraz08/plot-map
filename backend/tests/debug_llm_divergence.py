@@ -3,9 +3,9 @@ import json
 import instructor
 from app.core.config import settings
 
-# If not in env, supply the key from .env comment
-gemini_key = os.environ.get("GEMINI_API_KEY") or "AIzaSyCglkEWrpRnDu4yj_5T-0QDHbmJSIeUmRE"
-os.environ["GEMINI_API_KEY"] = gemini_key
+gemini_key = os.environ.get("GEMINI_API_KEY") or settings.GEMINI_API_KEY
+if gemini_key:
+    os.environ["GEMINI_API_KEY"] = gemini_key
 
 from app.api.dependencies import get_gemini_client
 from app.schemas.compile import CompileRequest
@@ -28,10 +28,15 @@ print("COMPARING NON-LLM vs LLM PIPELINE EXECUTION")
 print("Prompt:", prompt)
 print("==================================================")
 
-client = instructor.from_provider(
-    model="google/gemini-2.5-flash",
-    api_key=gemini_key,
-)
+client = None
+if gemini_key:
+    try:
+        client = instructor.from_provider(
+            model="google/gemini-2.5-flash",
+            api_key=gemini_key,
+        )
+    except Exception as e:
+        print(f"Warning: Could not initialize Gemini client: {e}")
 
 def run_pipeline(use_llm: bool):
     print(f"\n>>>>>>>>>>>> RUNNING (use_llm={use_llm}) <<<<<<<<<<<<")
@@ -88,8 +93,8 @@ def run_pipeline(use_llm: bool):
         # 6. Spatial Layout Plan
         layout_plan = CandidateToLayoutAdapter.adapt(cand, problem, plan_id="plan-cand_1")
         print("\n--- 6. SPATIAL LAYOUT PLAN ---")
-        print(f"Floor allocations: {layout_plan.floor_allocations}")
-        print(f"Vertical cores: {[c.model_dump() for c in layout_plan.vertical_cores]}")
+        print(f"Floors count: {layout_plan.floors}, Room floor assignments: {[(r.id, r.floor_assignment) for r in layout_plan.rooms]}")
+        print(f"Vertical cores: {[c.model_dump() for c in layout_plan.cores]}")
         
         # 7. Payload for compiler / MILP
         payload = SpatialCompilerBridge.plan_to_compiler_payload(layout_plan, problem=problem)
