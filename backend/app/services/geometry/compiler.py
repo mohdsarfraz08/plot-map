@@ -194,163 +194,19 @@ def compile_geometry(
     for x_val, y1, y2, w_type, r_list in merged_vertical:
         add_wall(x_val, y1, x_val, y2, w_type, r_list)
 
-    # 3. Generate doors
-    doors = []
-    door_id_counter = 1
+    # 3. Generate doors & windows using topological 1D Shapely intersections
+    from app.services.geometry.opening_resolver import resolve_openings_topologically
     
-    for r1, r2 in adjacencies:
-        if r1 not in boxes or r2 not in boxes:
-            continue
-        b1, b2 = boxes[r1], boxes[r2]
-        
-        shared_seg = None
-        if abs(b1["x"] + b1["w"] - b2["x"]) < 0.05:
-            sy1 = max(b1["y"], b2["y"])
-            sy2 = min(b1["y"] + b1["h"], b2["y"] + b2["h"])
-            if sy2 - sy1 >= 3.0:
-                shared_seg = ("vertical", b2["x"], sy1, sy2)
-        elif abs(b2["x"] + b2["w"] - b1["x"]) < 0.05:
-            sy1 = max(b1["y"], b2["y"])
-            sy2 = min(b1["y"] + b1["h"], b2["y"] + b2["h"])
-            if sy2 - sy1 >= 3.0:
-                shared_seg = ("vertical", b1["x"], sy1, sy2)
-        elif abs(b1["y"] + b1["h"] - b2["y"]) < 0.05:
-            sx1 = max(b1["x"], b2["x"])
-            sx2 = min(b1["x"] + b1["w"], b2["x"] + b2["w"])
-            if sx2 - sx1 >= 3.0:
-                shared_seg = ("horizontal", b2["y"], sx1, sx2)
-        elif abs(b2["y"] + b2["h"] - b1["y"]) < 0.05:
-            sx1 = max(b1["x"], b2["x"])
-            sx2 = min(b1["x"] + b1["w"], b2["x"] + b2["w"])
-            if sx2 - sx1 >= 3.0:
-                shared_seg = ("horizontal", b1["y"], sx1, sx2)
-                
-        if shared_seg:
-            orient, fixed_val, val1, val2 = shared_seg
-            mid_val = val1 + (val2 - val1) / 2
-            
-            door_type = "interior"
-            if b1["type"] == "Bathroom" or b2["type"] == "Bathroom":
-                door_type = "bathroom"
-            elif b1["type"] == "Entrance" or b2["type"] == "Entrance":
-                door_type = "entrance"
-                
-            door_width = 2.5 if door_type == "bathroom" else 3.0
-            
-            doors.append({
-                "id": f"door_{door_id_counter}",
-                "position": [round(fixed_val, 2), round(mid_val, 2)] if orient == "vertical" else [round(mid_val, 2), round(fixed_val, 2)],
-                "direction": orient,
-                "width": door_width,
-                "type": door_type,
-                "rooms": [r1, r2]
-            })
-            door_id_counter += 1
-
-    # 4. Generate windows
-    windows = []
-    window_id_counter = 1
-    
-    for name, box in boxes.items():
-        if box["is_ots"] or box["is_stair"] or box["type"] == "Entrance":
-            continue
-            
-        placed_ext = False
-        
-        # Left boundary touch
-        if abs(box["x"] - env_min_x) < 0.05 and box["h"] >= 4.0:
-            windows.append({
-                "id": f"window_{window_id_counter}",
-                "position": [round(box["x"], 2), round(box["y"] + box["h"] / 2, 2)],
-                "direction": "vertical",
-                "width": 3.0 if box["type"] == "Kitchen" else 4.0,
-                "type": "exterior",
-                "room": name
-            })
-            window_id_counter += 1
-            placed_ext = True
-            
-        # Right boundary touch
-        if abs(box["x"] + box["w"] - env_max_x) < 0.05 and box["h"] >= 4.0 and not placed_ext:
-            windows.append({
-                "id": f"window_{window_id_counter}",
-                "position": [round(box["x"] + box["w"], 2), round(box["y"] + box["h"] / 2, 2)],
-                "direction": "vertical",
-                "width": 3.0 if box["type"] == "Kitchen" else 4.0,
-                "type": "exterior",
-                "room": name
-            })
-            window_id_counter += 1
-            placed_ext = True
-            
-        # Bottom boundary touch
-        if abs(box["y"] - env_min_y) < 0.05 and box["w"] >= 4.0 and not placed_ext:
-            windows.append({
-                "id": f"window_{window_id_counter}",
-                "position": [round(box["x"] + box["w"] / 2, 2), round(box["y"], 2)],
-                "direction": "horizontal",
-                "width": 3.0 if box["type"] == "Kitchen" else 4.0,
-                "type": "exterior",
-                "room": name
-            })
-            window_id_counter += 1
-            placed_ext = True
-            
-        # Top boundary touch
-        if abs(box["y"] + box["h"] - env_max_y) < 0.05 and box["w"] >= 4.0 and not placed_ext:
-            windows.append({
-                "id": f"window_{window_id_counter}",
-                "position": [round(box["x"] + box["w"] / 2, 2), round(box["y"] + box["h"], 2)],
-                "direction": "horizontal",
-                "width": 3.0 if box["type"] == "Kitchen" else 4.0,
-                "type": "exterior",
-                "room": name
-            })
-            window_id_counter += 1
-            placed_ext = True
-
-        # OTS windows
-        for other_box in boxes.values():
-            if not other_box["is_ots"]:
-                continue
-            
-            shared_ots_seg = None
-            if abs(box["x"] + box["w"] - other_box["x"]) < 0.05:
-                sy1 = max(box["y"], other_box["y"])
-                sy2 = min(box["y"] + box["h"], other_box["y"] + other_box["h"])
-                if sy2 - sy1 >= 2.0:
-                    shared_ots_seg = ("vertical", other_box["x"], sy1, sy2)
-            elif abs(other_box["x"] + other_box["w"] - box["x"]) < 0.05:
-                sy1 = max(box["y"], other_box["y"])
-                sy2 = min(box["y"] + box["h"], other_box["y"] + other_box["h"])
-                if sy2 - sy1 >= 2.0:
-                    shared_ots_seg = ("vertical", box["x"], sy1, sy2)
-            elif abs(box["y"] + box["h"] - other_box["y"]) < 0.05:
-                sx1 = max(box["x"], other_box["x"])
-                sx2 = min(box["x"] + box["w"], other_box["x"] + other_box["w"])
-                if sx2 - sx1 >= 2.0:
-                    shared_ots_seg = ("horizontal", other_box["y"], sx1, sx2)
-            elif abs(other_box["y"] + other_box["h"] - box["y"]) < 0.05:
-                sx1 = max(box["x"], other_box["x"])
-                sx2 = min(box["x"] + box["w"], other_box["x"] + other_box["w"])
-                if sx2 - sx1 >= 2.0:
-                    shared_ots_seg = ("horizontal", box["y"], sx1, sx2)
-                    
-            if shared_ots_seg:
-                orient, fixed_val, val1, val2 = shared_ots_seg
-                mid_val = val1 + (val2 - val1) / 2
-                windows.append({
-                    "id": f"window_{window_id_counter}",
-                    "position": [round(fixed_val, 2), round(mid_val, 2)] if orient == "vertical" else [round(mid_val, 2), round(fixed_val, 2)],
-                    "direction": orient,
-                    "width": 2.0,
-                    "type": "ots",
-                    "room": name
-                })
-                window_id_counter += 1
+    openings = resolve_openings_topologically(
+        layout_rooms=layout_rooms,
+        envelope_coords=envelope_coords,
+        adjacencies=adjacencies,
+        road_edge="bottom"
+    )
 
     return {
         "walls": walls,
-        "doors": doors,
-        "windows": windows
+        "doors": openings["doors"],
+        "windows": openings["windows"]
     }
+

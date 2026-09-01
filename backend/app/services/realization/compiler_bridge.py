@@ -122,19 +122,76 @@ class SpatialCompilerBridge:
             "top": plan.setbacks.get("top", 0.0),
         }
 
-        stair_core_cfg = {"width": 8.0, "height": 10.0, "edge": "bottom-left"}
+        # Only add stair core for multi-floor buildings or if explicitly requested
+        stair_core_cfg = {"width": 0.0, "height": 0.0, "edge": "bottom-left"}
+        if plan.floors > 1:
+            stair_core_cfg = {"width": 8.0, "height": 10.0, "edge": "bottom-left"}
         for core in plan.cores:
-            if core.core_type == "vertical_stairwell":
+            if core.core_type == "vertical_stairwell" and plan.floors > 1:
+                stair_core_cfg = {"width": 8.0, "height": 10.0, "edge": "bottom-left"}
                 break
 
+        num_rooms = len(rooms_payload) if 'rooms_payload' in locals() else len(plan.rooms)
         rooms_payload = []
+        is_dense = len(plan.rooms) >= 6
+
         for r in plan.rooms:
+            rtype_str = str(r.room_type).lower()
+            min_area = r.target_area
+            target_area = r.target_area
+            max_area = r.target_area * 1.5
+            min_w, min_h = 7.0, 7.0
+            max_w, max_h = 24.0, 24.0
+            req_vent = False
+            adj_road = False
+            ar_range = r.aspect_ratio_range or (1.0, 1.45)
+
+            if "living" in rtype_str:
+                min_area = 80.0 if is_dense else max(130.0, r.target_area * 0.75)
+                target_area = 140.0 if is_dense else 220.0
+                max_area = 220.0 if is_dense else 300.0
+                min_w, min_h = (7.0, 7.0) if is_dense else (9.5, 9.5)
+                max_w, max_h = 20.0, 22.0
+                adj_road = True
+                ar_range = (1.0, 1.45)
+            elif "bed" in rtype_str:
+                min_area = 65.0 if is_dense else max(85.0, r.target_area * 0.75)
+                target_area = 95.0 if is_dense else 130.0
+                max_area = 130.0 if is_dense else 170.0
+                min_w, min_h = (6.5, 6.5) if is_dense else (8.5, 8.5)
+                max_w, max_h = 14.0, 15.0
+                req_vent = True
+                ar_range = (1.0, 1.40)
+            elif "kitchen" in rtype_str:
+                min_area = 30.0 if is_dense else max(45.0, r.target_area * 0.75)
+                target_area = 48.0 if is_dense else 75.0
+                max_area = 70.0 if is_dense else 110.0
+                min_w, min_h = (4.5, 4.5) if is_dense else (6.0, 6.0)
+                max_w, max_h = 11.0, 12.0
+                req_vent = True
+                ar_range = (1.0, 1.40)
+            elif "bath" in rtype_str:
+                min_area = 18.0 if is_dense else max(25.0, r.target_area * 0.75)
+                target_area = 28.0 if is_dense else 38.0
+                max_area = 40.0 if is_dense else 55.0
+                min_w, min_h = (3.5, 3.5) if is_dense else (4.0, 4.0)
+                max_w, max_h = 8.0, 8.0
+                ar_range = (1.0, 1.45)
+
             rooms_payload.append(
                 {
                     "name": r.id,
                     "type": r.room_type,
-                    "target_area": r.target_area,
-                    "aspect_ratio_range": r.aspect_ratio_range,
+                    "min_area": min_area,
+                    "target_area": target_area,
+                    "max_area": max_area,
+                    "min_width": min_w,
+                    "min_height": min_h,
+                    "max_width": max_w,
+                    "max_height": max_h,
+                    "aspect_ratio_range": ar_range,
+                    "requires_ventilation": req_vent,
+                    "adjacent_to_road": adj_road,
                     "floor_assignment": r.floor_assignment,
                     "unit_id": r.unit_id,
                 }
@@ -143,6 +200,14 @@ class SpatialCompilerBridge:
         adjacencies_payload = []
         for adj in plan.adjacencies:
             adjacencies_payload.append((adj.source_space_id, adj.target_space_id))
+
+        # Ensure residential hub topology if adjacencies are sparse
+        if not adjacencies_payload and len(rooms_payload) > 1:
+            living_name = next((r["name"] for r in rooms_payload if "living" in str(r["type"]).lower()), None)
+            if living_name:
+                for r in rooms_payload:
+                    if r["name"] != living_name:
+                        adjacencies_payload.append((living_name, r["name"]))
 
         grid_snap = float(plan.realization_parameters.get("grid_snap", 0.5))
         time_limit_sec = int(plan.realization_parameters.get("time_limit_sec", 5))

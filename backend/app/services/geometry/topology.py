@@ -92,27 +92,12 @@ def calculate_ventilation_and_ots(G: nx.DiGraph, setbacks: dict | None = None) -
     vent_G = nx.Graph()
     vent_G.add_node("AirNode", type="Air", name="AirNode")
     
-    has_side_ventilation = False
-    if setbacks:
-        # If left, right, top, or back setbacks are open, we can ventilate directly from setbacks
-        left_val = setbacks.get('left')
-        right_val = setbacks.get('right')
-        top_val = setbacks.get('top')
-        back_val = setbacks.get('back')
-        
-        has_side_ventilation = (
-            (left_val is not None and left_val > 0.0) or 
-            (right_val is not None and right_val > 0.0) or 
-            (top_val is not None and top_val > 0.0) or
-            (back_val is not None and back_val > 0.0)
-        )
-    
     # Add room nodes to the ventilation graph
     for name, data in G.nodes(data=True):
         vent_G.add_node(name, **data)
-        # If adjacent to road, or if the plot has side ventilation and this room requires ventilation
-        if data.get('adjacent_to_road', False) or (has_side_ventilation and data.get('requires_ventilation', False)):
+        if data.get('adjacent_to_road', False):
             vent_G.add_edge("AirNode", name)
+
             
     # Calculate shortest path lengths from AirNode to all nodes
     distances = {}

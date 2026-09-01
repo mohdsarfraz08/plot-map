@@ -55,7 +55,43 @@ def parse_requirements_fallback(prompt: str) -> CompilerIntent:
                 count = int(count_match.group(1))
             for _ in range(count):
                 rooms.append(RoomIntent(room_type=cat))
-                
+
+    # Check BHK patterns (e.g. "3 bhk", "3 bedroom", "1bhk")
+    bhk_match = re.search(r'(\d+)\s*(?:bhk|bedroom|bed)', prompt_lower)
+    if bhk_match and not any(r.room_type == RoomCategory.BEDROOM for r in rooms):
+        bed_count = int(bhk_match.group(1))
+        for _ in range(bed_count):
+            rooms.append(RoomIntent(room_type=RoomCategory.BEDROOM))
+
+    # Check bathroom counts (e.g. "2 bathrooms")
+    bath_match = re.search(r'(\d+)\s*(?:bath|bathroom)', prompt_lower)
+    if bath_match and not any(r.room_type == RoomCategory.BATHROOM for r in rooms):
+        bath_count = int(bath_match.group(1))
+        for _ in range(bath_count):
+            rooms.append(RoomIntent(room_type=RoomCategory.BATHROOM))
+
+
+    # 5. Parse families count (e.g., "2 families", "two families")
+    families_count = 1
+    family_match = re.search(r'(\d+)\s*(?:families|family|units|unit)', prompt_lower)
+    if family_match:
+        families_count = max(1, int(family_match.group(1)))
+    elif "two families" in prompt_lower or "2 families" in prompt_lower or "each family" in prompt_lower or "both families" in prompt_lower:
+        families_count = 2
+
+    # If two families and sparse rooms, provide full dual unit program
+    if families_count == 2 and len(rooms) <= 2:
+        rooms = [
+            RoomIntent(room_type=RoomCategory.BEDROOM, unit_id="unit-1"),
+            RoomIntent(room_type=RoomCategory.LIVING, unit_id="unit-1"),
+            RoomIntent(room_type=RoomCategory.KITCHEN, unit_id="unit-1"),
+            RoomIntent(room_type=RoomCategory.BATHROOM, unit_id="unit-1"),
+            RoomIntent(room_type=RoomCategory.BEDROOM, unit_id="unit-2"),
+            RoomIntent(room_type=RoomCategory.LIVING, unit_id="unit-2"),
+            RoomIntent(room_type=RoomCategory.KITCHEN, unit_id="unit-2"),
+            RoomIntent(room_type=RoomCategory.BATHROOM, unit_id="unit-2"),
+        ]
+
     # Fallback default room list if none matched
     if not rooms:
         rooms = [
@@ -64,14 +100,6 @@ def parse_requirements_fallback(prompt: str) -> CompilerIntent:
             RoomIntent(room_type=RoomCategory.KITCHEN),
             RoomIntent(room_type=RoomCategory.BATHROOM)
         ]
-
-    # 5. Parse families count (e.g., "2 families", "for each family")
-    families_count = 1
-    family_match = re.search(r'(\d+)\s*(?:families|family|units|unit)', prompt_lower)
-    if family_match:
-        families_count = max(1, int(family_match.group(1)))
-    elif "each family" in prompt_lower or "both families" in prompt_lower:
-        families_count = 2
 
     # 6. Parse vertical circulation strategy
     vertical_circulation = None

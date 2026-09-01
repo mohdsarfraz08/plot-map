@@ -21,6 +21,9 @@ export default function Home() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const viewerContainerRef = useRef(null)
 
+
+
+
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       if (viewerContainerRef.current?.requestFullscreen) {
@@ -354,6 +357,8 @@ export default function Home() {
                 />
               )}
             </motion.div>
+
+
 
 
             {/* Info Footer */}

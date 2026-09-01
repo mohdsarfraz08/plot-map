@@ -9,15 +9,66 @@ const defaultSetbacks = {
   right: 1.5,
 }
 
+const presets = [
+  {
+    name: '30×40 2BHK Urban',
+    width: 30,
+    depth: 40,
+    floors: 1,
+    description: 'Design a modern 2BHK with living room, kitchen, dining, 2 bedrooms and 2 bathrooms',
+    frontSetback: 5.0,
+  },
+  {
+    name: '20×50 Rowhouse',
+    width: 20,
+    depth: 50,
+    floors: 1,
+    description: 'Design a linear rowhouse with front living, linear circulation spine, kitchen, dining and 2 bedrooms',
+    frontSetback: 5.0,
+  },
+  {
+    name: '50×35 Luxury Villa',
+    width: 50,
+    depth: 35,
+    floors: 1,
+    description: 'Design a spacious 3BHK villa with grand foyer, formal living wing, open kitchen/dining and master suites',
+    frontSetback: 5.0,
+  },
+  {
+    name: '25×30 1BHK + OTS',
+    width: 25,
+    depth: 30,
+    floors: 1,
+    description: 'Design a compact 1BHK with living room, kitchen with natural light, bedroom and bathroom with OTS lightwell',
+    frontSetback: 5.0,
+  },
+  {
+    name: '40×40 G+1 Duplex',
+    width: 40,
+    depth: 40,
+    floors: 2,
+    description: 'Design a G+1 duplex house with living, kitchen, bedrooms and internal staircase',
+    frontSetback: 5.0,
+  },
+]
+
 export function BuildingInputForm({ onSubmit, isLoading }) {
-  const [plotWidth, setPlotWidth] = useState(43.75)
-  const [plotDepth, setPlotDepth] = useState(41)
-  const [floors, setFloors] = useState(3)
+  const [plotWidth, setPlotWidth] = useState(30)
+  const [plotDepth, setPlotDepth] = useState(40)
+  const [floors, setFloors] = useState(1)
   const [description, setDescription] = useState(
-    'Generate an optimized residential building layout with maximum cross-ventilation and natural light'
+    'Design a modern 2BHK with living room, kitchen, dining, 2 bedrooms and 2 bathrooms'
   )
   const [setbacks, setSetbacks] = useState(defaultSetbacks)
   const [showAdvanced, setShowAdvanced] = useState(false)
+
+  const handleApplyPreset = (preset) => {
+    setPlotWidth(preset.width)
+    setPlotDepth(preset.depth)
+    setFloors(preset.floors)
+    setDescription(preset.description)
+    setSetbacks((prev) => ({ ...prev, front: preset.frontSetback }))
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -41,10 +92,30 @@ export function BuildingInputForm({ onSubmit, isLoading }) {
       {/* Header */}
       <div className="border-b border-border pb-6">
         <h2 className="text-2xl font-light tracking-wide text-foreground mb-2">PLOT CONSTRAINTS</h2>
-        <p className="text-sm text-muted-foreground font-mono">Define your urban plot and preferences</p>
+        <p className="text-sm text-muted-foreground font-mono">Define your urban plot or select a demo preset</p>
+      </div>
+
+      {/* Demo Presets Chips */}
+      <div className="space-y-2">
+        <label className="text-[11px] uppercase tracking-widest text-accent/80 font-mono font-semibold">
+          ⚡ Quick Demo Presets
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {presets.map((preset) => (
+            <button
+              key={preset.name}
+              type="button"
+              onClick={() => handleApplyPreset(preset)}
+              className="text-xs font-mono px-3 py-1.5 rounded-sm bg-card hover:bg-accent/20 border border-border hover:border-accent/50 text-foreground transition-all duration-150 cursor-pointer"
+            >
+              {preset.name}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Primary Parameters */}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-2">
           <label className="text-xs uppercase tracking-widest text-muted-foreground font-mono">

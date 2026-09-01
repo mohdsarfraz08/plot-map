@@ -1,18 +1,20 @@
-import React, { useState } from 'react'
-import { Canvas } from '@react-three/fiber'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
+import * as THREE from 'three'
+import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, Grid, Html } from '@react-three/drei'
 import { Maximize2, Minimize2 } from 'lucide-react'
 
 const roomColors = {
   "Entrance": "#a6adc8",       // Cool Slate
-  "Living Room": "#b4befe",     // Soft Indigo
-  "Kitchen": "#ffe082",         // Warm Gold
-  "Bedroom": "#a6e3a1",         // Soft Leaf Green
-  "Bathroom": "#f2cdcd",        // Soft Coral Pink
-  "Corridor": "#94e2d5",        // Soft Teal
-  "OTS": "#74c7ec",             // Sky Blue (open shafts)
-  "Staircase": "#f38ba8",       // Soft Rose
+  "Living Room": "#818cf8",     // Soft Indigo
+  "Kitchen": "#fbbf24",         // Warm Gold
+  "Bedroom": "#4ade80",         // Soft Leaf Green
+  "Bathroom": "#f472b6",        // Soft Rose
+  "Corridor": "#2dd4bf",        // Soft Teal
+  "OTS": "#38bdf8",             // Sky Blue (open shafts)
+  "Staircase": "#f59e0b",       // Amber
 }
+
 
 // Helper to determine if an opening is hosted by a wall segment
 function getOpeningsOnWall(wall, openings, tolerance = 0.5) {
@@ -58,17 +60,14 @@ function ProceduralDoor3D({ position, direction, width, height = 7.0 }) {
   return (
     <group position={position} rotation={[0, angle, 0]}>
       {/* Wooden Door Frame */}
-      {/* Left Frame */}
       <mesh position={[-width / 2 + 0.05, height / 2, 0]}>
         <boxGeometry args={[0.1, height, 0.15]} />
         <meshStandardMaterial color="#4e3629" roughness={0.7} />
       </mesh>
-      {/* Right Frame */}
       <mesh position={[width / 2 - 0.05, height / 2, 0]}>
         <boxGeometry args={[0.1, height, 0.15]} />
         <meshStandardMaterial color="#4e3629" roughness={0.7} />
       </mesh>
-      {/* Top Header Frame */}
       <mesh position={[0, height - 0.05, 0]}>
         <boxGeometry args={[width, 0.1, 0.15]} />
         <meshStandardMaterial color="#4e3629" roughness={0.7} />
@@ -98,104 +97,93 @@ function ProceduralWindow3D({ position, direction, width, height = 4.0, sillHeig
     <group position={[position[0], position[1] + sillHeight + height / 2, position[2]]} rotation={[0, angle, 0]}>
       {/* Aluminium Outer Frame */}
       <mesh>
-        <boxGeometry args={[width, height, 0.16]} />
-        <meshStandardMaterial color="#2d3748" metalness={0.6} roughness={0.3} wireframe />
+        <boxGeometry args={[width, height, 0.15]} />
+        <meshStandardMaterial color="#334155" metalness={0.8} roughness={0.2} />
       </mesh>
-      {/* Solid Outer Frame Bounds */}
-      <mesh position={[0, 0, 0]}>
-        <boxGeometry args={[width, 0.08, 0.15]} />
-        <meshStandardMaterial color="#2d3748" metalness={0.6} roughness={0.3} />
-      </mesh>
-      <mesh position={[-width / 2 + 0.04, 0, 0]}>
-        <boxGeometry args={[0.08, height, 0.15]} />
-        <meshStandardMaterial color="#2d3748" metalness={0.6} roughness={0.3} />
-      </mesh>
-      <mesh position={[width / 2 - 0.04, 0, 0]}>
-        <boxGeometry args={[0.08, height, 0.15]} />
-        <meshStandardMaterial color="#2d3748" metalness={0.6} roughness={0.3} />
-      </mesh>
-
       {/* Glass Pane */}
       <mesh>
         <boxGeometry args={[width - 0.1, height - 0.1, 0.02]} />
         <meshPhysicalMaterial
-          color="#a9efefff"
+          color="#38bdf8"
+          transmission={0.9}
+          opacity={0.3}
           transparent
-          opacity={0.45}
           roughness={0.1}
-          metalness={0.9}
-          transmission={0.6}
           ior={1.5}
         />
+      </mesh>
+      {/* Center Mullion */}
+      <mesh>
+        <boxGeometry args={[0.04, height, 0.16]} />
+        <meshStandardMaterial color="#1e293b" metalness={0.7} roughness={0.3} />
       </mesh>
     </group>
   )
 }
 
-// Dog-legged staircase builder (U-shape concrete/wood stairs with landing)
-function ProceduralStairs3D({ rect, floorHeight, baseZ }) {
-  const { x, y, w, h } = rect
+// 3D Stairs Step by Step (Highlighted Vertical Circulation Core)
+function ProceduralStairs3D({ rect, floorHeight = 10.0, baseZ = 0 }) {
+  const stepCount = 16
+  const stepHeight = floorHeight / stepCount
+  const landingDepth = Math.min(3.0, rect.h * 0.35)
+  const runDepth = rect.h - landingDepth
+  const stepDepth = runDepth / (stepCount / 2)
+  const flightWidth = Math.max(1.0, rect.w / 2 - 0.2)
 
-  // Design details
-  const stepsPerFloor = 16
-  const stepsPerFlight = stepsPerFloor / 2
-  const stepHeight = floorHeight / stepsPerFloor
-  const landingHeight = stepHeight * stepsPerFlight
+  const steps = []
 
-  // Dimensions of stairs flights
-  const flightWidth = w / 2 - 0.1
-  const landingDepth = Math.min(3.5, h / 3)
-  const flightDepth = h - landingDepth
+  // Flight 1: Going Up (Bottom-Left to Landing)
+  for (let i = 0; i < stepCount / 2; i++) {
+    const y = baseZ + i * stepHeight + stepHeight / 2
+    const z = rect.y + i * stepDepth + stepDepth / 2
+    const x = rect.x + flightWidth / 2
 
-  const stepsList = []
-
-  // Flight 1: Rising from 0 to landingHeight along the left side
-  for (let i = 0; i < stepsPerFlight; i++) {
-    const stepDepthVal = flightDepth / stepsPerFlight
-    const stepZ = y + i * stepDepthVal + stepDepthVal / 2
-    const stepX = x + flightWidth / 2
-    const stepY = baseZ + i * stepHeight + stepHeight / 2
-
-    stepsList.push(
-      <mesh key={`flight1-step-${i}`} position={[stepX, stepY, stepZ]}>
-        <boxGeometry args={[flightWidth, stepHeight, stepDepthVal]} />
-        <meshStandardMaterial color="#e2e8f0" roughness={0.8} />
+    steps.push(
+      <mesh key={`flight1-step-${i}`} position={[x, y, z]}>
+        <boxGeometry args={[flightWidth, stepHeight, stepDepth]} />
+        <meshStandardMaterial color="#f59e0b" roughness={0.4} metalness={0.1} />
       </mesh>
     )
   }
 
-  // Mid Landing: Flat slab at landingHeight at the back of the core
-  const landingX = x + w / 2
-  const landingY = baseZ + landingHeight - stepHeight / 2
-  const landingZ = y + h - landingDepth / 2
-
-  stepsList.push(
-    <mesh key="mid-landing" position={[landingX, landingY, landingZ]}>
-      <boxGeometry args={[w, stepHeight, landingDepth]} />
-      <meshStandardMaterial color="#cbd5e1" roughness={0.7} />
+  // Mid-Landing
+  const landingY = baseZ + (stepCount / 2) * stepHeight - stepHeight / 2
+  const landingZ = rect.y + runDepth + landingDepth / 2
+  steps.push(
+    <mesh key="mid-landing" position={[rect.x + rect.w / 2, landingY, landingZ]}>
+      <boxGeometry args={[rect.w, stepHeight, landingDepth]} />
+      <meshStandardMaterial color="#d97706" roughness={0.4} metalness={0.15} />
     </mesh>
   )
 
-  // Flight 2: Rising from landingHeight to floorHeight along the right side (reverse direction)
-  for (let i = 0; i < stepsPerFlight; i++) {
-    const stepDepthVal = flightDepth / stepsPerFlight
-    const stepZ = y + h - landingDepth - i * stepDepthVal - stepDepthVal / 2
-    const stepX = x + w - flightWidth / 2
-    const stepY = baseZ + landingHeight + i * stepHeight + stepHeight / 2
+  // Flight 2: Going Up to Next Floor (Landing to Top-Right)
+  for (let i = 0; i < stepCount / 2; i++) {
+    const y = baseZ + (stepCount / 2 + i) * stepHeight + stepHeight / 2
+    const z = rect.y + runDepth - (i + 1) * stepDepth + stepDepth / 2
+    const x = rect.x + rect.w - flightWidth / 2
 
-    stepsList.push(
-      <mesh key={`flight2-step-${i}`} position={[stepX, stepY, stepZ]}>
-        <boxGeometry args={[flightWidth, stepHeight, stepDepthVal]} />
-        <meshStandardMaterial color="#e2e8f0" roughness={0.8} />
+    steps.push(
+      <mesh key={`flight2-step-${i}`} position={[x, y, z]}>
+        <boxGeometry args={[flightWidth, stepHeight, stepDepth]} />
+        <meshStandardMaterial color="#f59e0b" roughness={0.4} metalness={0.1} />
       </mesh>
     )
   }
 
-  return <group>{stepsList}</group>
+  return <group>{steps}</group>
 }
 
-// Extrudes wall panels constructively, splitting them dynamically around door/window spans
-function ProceduralWall3D({ wall, openings, floorHeight, baseZ, plotWidth, plotDepth }) {
+
+// 3D Constructive Wall with precise boolean cutouts & architectural transparency
+function ProceduralWall3D({
+  wall,
+  openings,
+  floorHeight = 10.0,
+  baseZ = 0,
+  plotWidth,
+  plotDepth,
+  isAllFloorsView = false,
+}) {
   const [x1, y1] = wall.start
   const [x2, y2] = wall.end
   const dx = x2 - x1
@@ -208,7 +196,16 @@ function ProceduralWall3D({ wall, openings, floorHeight, baseZ, plotWidth, plotD
   const angle = Math.atan2(dy, dx)
 
   const thickness = wall.thickness || 0.5
-  const wallTypeColor = wall.type === "exterior" ? "#d1d5db" : "#f3f4f6"
+  const isExterior = wall.type === "exterior"
+
+  // Material tuning for architectural readability:
+  // In All Floors view: exterior walls are ghosted (semi-transparent) so interior rooms/doors/stairs are readable.
+  // Interior partition walls remain solid and crisp.
+  const wallMatProps = isExterior
+    ? (isAllFloorsView
+      ? { color: "#94a3b8", transparent: true, opacity: 0.28, roughness: 0.4 }
+      : { color: "#cbd5e1", transparent: true, opacity: 0.70, roughness: 0.6 })
+    : { color: "#f8fafc", transparent: true, opacity: 0.92, roughness: 0.7 }
 
   // Query opening list lying on this wall line
   const hostedOpenings = getOpeningsOnWall(wall, openings)
@@ -237,7 +234,7 @@ function ProceduralWall3D({ wall, openings, floorHeight, baseZ, plotWidth, plotD
           rotation={[0, -angle, 0]}
         >
           <boxGeometry args={[panelL, floorHeight, thickness]} />
-          <meshStandardMaterial color={wallTypeColor} roughness={0.8} />
+          <meshStandardMaterial {...wallMatProps} />
         </mesh>
       )
     }
@@ -259,7 +256,7 @@ function ProceduralWall3D({ wall, openings, floorHeight, baseZ, plotWidth, plotD
             rotation={[0, -angle, 0]}
           >
             <boxGeometry args={[opW, headerHeight, thickness]} />
-            <meshStandardMaterial color={wallTypeColor} roughness={0.8} />
+            <meshStandardMaterial {...wallMatProps} />
           </mesh>
         )
       }
@@ -274,7 +271,7 @@ function ProceduralWall3D({ wall, openings, floorHeight, baseZ, plotWidth, plotD
           rotation={[0, -angle, 0]}
         >
           <boxGeometry args={[opW, sillH, thickness]} />
-          <meshStandardMaterial color={wallTypeColor} roughness={0.8} />
+          <meshStandardMaterial {...wallMatProps} />
         </mesh>
       )
       // Window Header (7 to floorHeight)
@@ -288,7 +285,7 @@ function ProceduralWall3D({ wall, openings, floorHeight, baseZ, plotWidth, plotD
             rotation={[0, -angle, 0]}
           >
             <boxGeometry args={[opW, headerHeight, thickness]} />
-            <meshStandardMaterial color={wallTypeColor} roughness={0.8} />
+            <meshStandardMaterial {...wallMatProps} />
           </mesh>
         )
       }
@@ -312,7 +309,7 @@ function ProceduralWall3D({ wall, openings, floorHeight, baseZ, plotWidth, plotD
         rotation={[0, -angle, 0]}
       >
         <boxGeometry args={[panelL, floorHeight, thickness]} />
-        <meshStandardMaterial color={wallTypeColor} roughness={0.8} />
+        <meshStandardMaterial {...wallMatProps} />
       </mesh>
     )
   }
@@ -320,11 +317,142 @@ function ProceduralWall3D({ wall, openings, floorHeight, baseZ, plotWidth, plotD
   return <group>{panels}</group>
 }
 
-function BuildingModel({ buildingData, activeFloorFilter }) {
+// 3D Procedural Floor Slab with Single Draw Call & Stair Cutout Hole
+function ProceduralSlab3D({ plotWidth, plotDepth, fLevel, stairCoreRect, baseZ }) {
+  const slabShape = useMemo(() => {
+    const shape = new THREE.Shape()
+    const hw = (plotWidth - 0.1) / 2
+    const hd = (plotDepth - 0.1) / 2
+
+    // Outer perimeter
+    shape.moveTo(-hw, -hd)
+    shape.lineTo(hw, -hd)
+    shape.lineTo(hw, hd)
+    shape.lineTo(-hw, hd)
+    shape.closePath()
+
+    // Punch stairwell hole if fLevel > 1
+    if (fLevel > 1 && stairCoreRect) {
+      const hole = new THREE.Path()
+      const sx1 = stairCoreRect.x - plotWidth / 2
+      const sz1 = stairCoreRect.y - plotDepth / 2
+      const sx2 = sx1 + stairCoreRect.w
+      const sz2 = sz1 + stairCoreRect.h
+
+      hole.moveTo(sx1, sz1)
+      hole.lineTo(sx2, sz1)
+      hole.lineTo(sx2, sz2)
+      hole.lineTo(sx1, sz2)
+      hole.closePath()
+
+      shape.holes.push(hole)
+    }
+
+    return shape
+  }, [plotWidth, plotDepth, fLevel, stairCoreRect])
+
+  return (
+    <mesh position={[0, baseZ, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <extrudeGeometry
+        args={[
+          slabShape,
+          {
+            depth: 0.5, // 6-inch architectural RCC structural thickness
+            bevelEnabled: false,
+          }
+        ]}
+      />
+      <meshStandardMaterial color="#1e293b" roughness={0.8} />
+    </mesh>
+  )
+}
+
+// 3D Roof Terrace with Parapet Walls and Staircase Headroom Cabin (Mumty)
+function ProceduralRoofAndMumty3D({ plotWidth, plotDepth, topZ, stairCoreRect }) {
+  const parapetShape = useMemo(() => {
+    const shape = new THREE.Shape()
+    const hw = (plotWidth - 0.1) / 2
+    const hd = (plotDepth - 0.1) / 2
+    const t = 0.5 // 6-inch parapet thickness
+
+    shape.moveTo(-hw, -hd)
+    shape.lineTo(hw, -hd)
+    shape.lineTo(hw, hd)
+    shape.lineTo(-hw, hd)
+    shape.closePath()
+
+    const hole = new THREE.Path()
+    hole.moveTo(-hw + t, -hd + t)
+    hole.lineTo(hw - t, -hd + t)
+    hole.lineTo(hw - t, hd - t)
+    hole.lineTo(-hw + t, hd - t)
+    hole.closePath()
+
+    shape.holes.push(hole)
+    return shape
+  }, [plotWidth, plotDepth])
+
+  return (
+    <group position={[0, topZ, 0]}>
+      {/* 1. Roof Terrace Floor Slab */}
+      <ProceduralSlab3D
+        plotWidth={plotWidth}
+        plotDepth={plotDepth}
+        fLevel={2}
+        stairCoreRect={stairCoreRect}
+        baseZ={0}
+      />
+
+      {/* 2. Perimeter Parapet Wall (3.0 ft height) */}
+      <mesh position={[0, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <extrudeGeometry
+          args={[
+            parapetShape,
+            {
+              depth: 3.0, // 3.0 ft height
+              bevelEnabled: false,
+            }
+          ]}
+        />
+        <meshStandardMaterial color="#334155" roughness={0.6} />
+      </mesh>
+
+      {/* 3. Staircase Headroom Cabin (Mumty) */}
+      {stairCoreRect && (
+        <group
+          position={[
+            stairCoreRect.x + stairCoreRect.w / 2 - plotWidth / 2,
+            0,
+            stairCoreRect.y + stairCoreRect.h / 2 - plotDepth / 2,
+          ]}
+        >
+          {/* Mumty Walls (8 ft height) */}
+          <mesh position={[0, 4.0, 0]}>
+            <boxGeometry args={[stairCoreRect.w, 8.0, stairCoreRect.h]} />
+            <meshStandardMaterial color="#cbd5e1" roughness={0.7} />
+          </mesh>
+          {/* Mumty Concrete Cap Mini-Slab (6-inch thickness) */}
+          <mesh position={[0, 8.25, 0]}>
+            <boxGeometry args={[stairCoreRect.w + 0.5, 0.5, stairCoreRect.h + 0.5]} />
+            <meshStandardMaterial color="#1e293b" roughness={0.8} />
+          </mesh>
+          {/* Terrace Exit Door */}
+          <mesh position={[0, 3.5, stairCoreRect.h / 2 + 0.05]}>
+            <boxGeometry args={[3.0, 7.0, 0.1]} />
+            <meshStandardMaterial color="#4e3629" roughness={0.6} />
+          </mesh>
+        </group>
+      )}
+    </group>
+  )
+}
+
+function BuildingModel({ buildingData, activeFloorFilter, actualFloors }) {
   if (!buildingData) return null
 
-  const { width: plotWidth, depth: plotDepth, floors, boundaries } = buildingData
+  const { width: plotWidth, depth: plotDepth, boundaries } = buildingData
   const floorHeight = 10.0
+  const totalActualFloors = actualFloors?.length || 1
 
   // Bounding boxes calculations
   let stairCoreRect = null
@@ -358,14 +486,13 @@ function BuildingModel({ buildingData, activeFloorFilter }) {
         <meshBasicMaterial color="#313244" wireframe />
       </mesh>
 
-      {/* 2. Floors Iterative Renders */}
-      {buildingData.floors_data && Object.entries(buildingData.floors_data).map(([floorIdxStr, floorData]) => {
-        const fLevel = parseInt(floorIdxStr)
+      {/* 2. Floors Iterative Renders (Only valid actual floors) */}
+      {actualFloors.filter((fLevel) => activeFloorFilter === 'all' || activeFloorFilter === fLevel).map((fLevel) => {
+        const floorData = buildingData.floors_data?.[fLevel] || buildingData.floors_data?.[`${fLevel}`]
+        if (!floorData) return null
+
         const fIdx = fLevel - 1
         const baseZ = fIdx * floorHeight
-
-        // Filter out if not in the active view selection
-        if (activeFloorFilter !== 'all' && activeFloorFilter !== fLevel) return null
 
         const geometry = floorData.geometry || {}
         const walls = geometry.walls || []
@@ -375,13 +502,16 @@ function BuildingModel({ buildingData, activeFloorFilter }) {
 
         return (
           <group key={`floor-group-${fLevel}`}>
-            {/* Floor Slab Plate */}
-            <mesh position={[0, baseZ - 0.05, 0]}>
-              <boxGeometry args={[plotWidth - 0.1, 0.1, plotDepth - 0.1]} />
-              <meshStandardMaterial color="#2d3748" roughness={0.65} />
-            </mesh>
+            {/* Seamless Manifold Floor Slab with Stair Cutout Hole */}
+            <ProceduralSlab3D
+              plotWidth={plotWidth}
+              plotDepth={plotDepth}
+              fLevel={fLevel}
+              stairCoreRect={stairCoreRect}
+              baseZ={baseZ}
+            />
 
-            {/* Room Boxes (semi-transparent color volumes) */}
+            {/* Room Boxes (semi-transparent volumetric zones with clear color identity) */}
             {Object.entries(layout).map(([roomName, room]) => {
               const rx = room.x + room.width / 2 - plotWidth / 2
               const rz = room.y + room.height / 2 - plotDepth / 2
@@ -389,7 +519,7 @@ function BuildingModel({ buildingData, activeFloorFilter }) {
               const color = roomColors[room.type] || "#ffffff"
               const isOts = room.type === "OTS"
 
-              if (isOts) return null // Shaft is open space
+              if (isOts) return null
 
               return (
                 <group key={`volume-${roomName}`}>
@@ -398,15 +528,17 @@ function BuildingModel({ buildingData, activeFloorFilter }) {
                     <meshStandardMaterial
                       color={color}
                       transparent
-                      opacity={0.06}
-                      roughness={0.9}
+                      opacity={activeFloorFilter === 'all' ? 0.22 : 0.32}
+                      roughness={0.8}
                     />
                   </mesh>
                   {/* Floating HTML Label */}
-                  <Html position={[rx, baseZ + floorHeight / 2 + 1, rz]} center distanceFactor={15}>
-                    <div className="bg-[#11111b]/95 border border-border p-2 rounded text-[10px] font-mono pointer-events-none select-none text-center shadow-lg min-w-[70px]">
-                      <span className="font-bold uppercase" style={{ color: color }}>{roomName}</span>
-                      <div className="text-[8px] text-muted-foreground mt-0.5">{room.width}′ × {room.height}′</div>
+                  <Html position={[rx, baseZ + floorHeight / 2 + 1, rz]} center distanceFactor={16}>
+                    <div className="bg-[#0f172a]/95 border border-slate-700/80 px-2 py-1 rounded text-[10px] font-mono pointer-events-none select-none text-center shadow-xl min-w-[70px] backdrop-blur-xs">
+                      <span className="font-bold uppercase tracking-wider text-[10px]" style={{ color: color }}>
+                        {room.type || roomName}
+                      </span>
+                      <div className="text-[8px] text-slate-300 font-medium mt-0.5">{room.width}′ × {room.height}′</div>
                     </div>
                   </Html>
                 </group>
@@ -423,6 +555,7 @@ function BuildingModel({ buildingData, activeFloorFilter }) {
                 baseZ={baseZ}
                 plotWidth={plotWidth}
                 plotDepth={plotDepth}
+                isAllFloorsView={activeFloorFilter === 'all'}
               />
             ))}
 
@@ -461,7 +594,7 @@ function BuildingModel({ buildingData, activeFloorFilter }) {
                   x: stairCoreRect.x - plotWidth / 2,
                   y: stairCoreRect.y - plotDepth / 2,
                   w: stairCoreRect.w,
-                  h: stairCoreRect.h
+                  h: stairCoreRect.h,
                 }}
                 floorHeight={floorHeight}
                 baseZ={baseZ}
@@ -471,7 +604,17 @@ function BuildingModel({ buildingData, activeFloorFilter }) {
         )
       })}
 
-      {/* 3. Columns pillars rising all floors */}
+      {/* 3. Roof Terrace & Stair Headroom Mumty Cabin on top floor */}
+      {activeFloorFilter === 'all' && (
+        <ProceduralRoofAndMumty3D
+          plotWidth={plotWidth}
+          plotDepth={plotDepth}
+          topZ={totalActualFloors * floorHeight}
+          stairCoreRect={stairCoreRect}
+        />
+      )}
+
+      {/* 4. Structural Columns Pillars */}
       {stairCoreRect && (
         <>
           {[
@@ -479,16 +622,47 @@ function BuildingModel({ buildingData, activeFloorFilter }) {
             [plotWidth / 2 - 0.2, -plotDepth / 2 + 0.2],
             [-plotWidth / 2 + 0.2, plotDepth / 2 - 0.2],
             [plotWidth / 2 - 0.2, plotDepth / 2 - 0.2],
-          ].map(([colX, colZ], idx) => (
-            <mesh key={`pillar-${idx}`} position={[colX, (floors * floorHeight) / 2, colZ]}>
-              <boxGeometry args={[0.5, floors * floorHeight, 0.5]} />
-              <meshStandardMaterial color="#475569" roughness={0.7} />
-            </mesh>
-          ))}
+          ].map(([colX, colZ], idx) => {
+            const pillarHeight = totalActualFloors * floorHeight
+            return (
+              <mesh key={`pillar-${idx}`} position={[colX, pillarHeight / 2, colZ]}>
+                <boxGeometry args={[0.5, pillarHeight, 0.5]} />
+                <meshStandardMaterial color="#475569" roughness={0.7} />
+              </mesh>
+            )
+          })}
         </>
       )}
     </group>
   )
+}
+
+function CameraBoundsFitter({ plotWidth, plotDepth, buildingHeight, activeFloorFilter, controlsRef }) {
+  const { camera } = useThree()
+
+  useEffect(() => {
+    if (!plotWidth || !plotDepth) return
+
+    const h = activeFloorFilter === 'all' ? (buildingHeight || 10) : 10
+    const centerY = activeFloorFilter === 'all'
+      ? (h / 2)
+      : (((activeFloorFilter - 1) * 10) + 5)
+
+    const maxDim = Math.max(plotWidth, plotDepth, h)
+    const dist = maxDim * 1.25
+
+    // Camera positioned at the FRONT of the house (negative Z, road side) looking towards rear
+    camera.position.set(-dist * 0.35, centerY + dist * 0.90, -dist * 1.05)
+    camera.lookAt(0, centerY, 0)
+
+
+    if (controlsRef?.current) {
+      controlsRef.current.target.set(0, centerY, 0)
+      controlsRef.current.update()
+    }
+  }, [plotWidth, plotDepth, buildingHeight, activeFloorFilter, camera, controlsRef])
+
+  return null
 }
 
 function MockupWireframeMesh() {
@@ -496,18 +670,46 @@ function MockupWireframeMesh() {
     <group position={[0, 6, 0]}>
       <mesh>
         <boxGeometry args={[10, 14, 10]} />
-        <meshBasicMaterial color="#252527ff" wireframe />
+        <meshBasicMaterial color="#252527" wireframe />
       </mesh>
     </group>
   )
 }
 
+
 export function BuildingViewer3D({ buildingData, isLoading, isFullscreen, onToggleFullscreen }) {
   const [activeFloorFilter, setActiveFloorFilter] = useState('all')
+  const controlsRef = useRef(null)
+
+  // Extract only floors that actually exist and contain real spatial data
+  const actualFloors = useMemo(() => {
+    if (!buildingData?.floors_data) {
+      if (buildingData?.floors) {
+        return Array.from({ length: buildingData.floors }, (_, i) => i + 1)
+      }
+      return [1]
+    }
+    const validFloors = Object.entries(buildingData.floors_data)
+      .filter(([_, fData]) => {
+        const hasRooms = fData?.layout && Object.keys(fData.layout).length > 0
+        const hasWalls = fData?.geometry?.walls && fData.geometry.walls.length > 0
+        return hasRooms || hasWalls
+      })
+      .map(([k]) => parseInt(k))
+      .sort((a, b) => a - b)
+    return validFloors.length > 0 ? validFloors : [1]
+  }, [buildingData])
+
+  // Reset activeFloorFilter if currently selected floor is not in actualFloors
+  useEffect(() => {
+    if (activeFloorFilter !== 'all' && !actualFloors.includes(activeFloorFilter)) {
+      setActiveFloorFilter('all')
+    }
+  }, [actualFloors, activeFloorFilter])
 
   return (
     <div className="relative w-full h-full bg-[#0a0a0f] flex flex-col">
-      {/* Floors selection controls */}
+      {/* Floors selection controls: Data-Driven Floor Tabs */}
       {buildingData && (
         <div className="absolute top-4 left-4 z-10 flex gap-1 bg-[#0d0e15]/90 border border-border p-1 rounded-sm shadow-md font-mono text-[10px]">
           <button
@@ -516,13 +718,13 @@ export function BuildingViewer3D({ buildingData, isLoading, isFullscreen, onTogg
           >
             Show All Floors
           </button>
-          {Array.from({ length: buildingData.floors || 1 }).map((_, idx) => (
+          {actualFloors.map((fLevel) => (
             <button
-              key={idx}
-              onClick={() => setActiveFloorFilter(idx + 1)}
-              className={`px-3 py-1.5 uppercase transition-colors cursor-pointer rounded-xs ${activeFloorFilter === idx + 1 ? 'bg-primary/20 text-primary font-bold' : 'text-muted-foreground hover:text-foreground'}`}
+              key={fLevel}
+              onClick={() => setActiveFloorFilter(fLevel)}
+              className={`px-3 py-1.5 uppercase transition-colors cursor-pointer rounded-xs ${activeFloorFilter === fLevel ? 'bg-primary/20 text-primary font-bold' : 'text-muted-foreground hover:text-foreground'}`}
             >
-              Floor {idx + 1}
+              Floor {fLevel}
             </button>
           ))}
         </div>
@@ -570,15 +772,33 @@ export function BuildingViewer3D({ buildingData, isLoading, isFullscreen, onTogg
             infiniteGrid
           />
 
+          {/* Camera Auto-Fitter */}
+          {buildingData && (
+            <CameraBoundsFitter
+              plotWidth={buildingData.width || 40}
+              plotDepth={buildingData.depth || 40}
+              buildingHeight={actualFloors.length * 10}
+              activeFloorFilter={activeFloorFilter}
+              controlsRef={controlsRef}
+            />
+          )}
+
           {/* Procedural 3D model generator or Mockup Wireframe Mesh */}
           {buildingData ? (
-            <BuildingModel buildingData={buildingData} activeFloorFilter={activeFloorFilter} />
+            <BuildingModel
+              buildingData={buildingData}
+              activeFloorFilter={activeFloorFilter}
+              actualFloors={actualFloors}
+            />
           ) : (
             <MockupWireframeMesh />
           )}
 
+
+
           {/* Orbit navigation controls */}
           <OrbitControls
+            ref={controlsRef}
             autoRotate={!buildingData}
             autoRotateSpeed={0.4}
             minDistance={10}

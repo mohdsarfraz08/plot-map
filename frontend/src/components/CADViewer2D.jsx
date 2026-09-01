@@ -14,6 +14,8 @@ export function CADViewer2D({ svgString, isFullscreen, onToggleFullscreen }) {
     annotations: true,
     grid: true
   })
+
+
   const [isMeasuring, setIsMeasuring] = useState(false)
   const [measurePoints, setMeasurePoints] = useState([])
   const [measurement, setMeasurement] = useState(null)
@@ -167,6 +169,8 @@ export function CADViewer2D({ svgString, isFullscreen, onToggleFullscreen }) {
     return processed
   }
 
+
+
   return (
     <div className="flex flex-col w-full h-full bg-[#161722] border border-border relative overflow-hidden select-none">
       
@@ -220,13 +224,14 @@ export function CADViewer2D({ svgString, isFullscreen, onToggleFullscreen }) {
       {/* Main Canvas Area */}
       <div 
         ref={containerRef}
-        className={`flex-1 relative overflow-hidden bg-[#fafafa] ${isMeasuring ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
+        className={`flex-1 relative overflow-hidden bg-[#0b0f19] ${isMeasuring ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
+
         <div 
           ref={svgWrapperRef}
           className="absolute transform-gpu origin-top-left w-full h-full flex items-center justify-center pointer-events-none"

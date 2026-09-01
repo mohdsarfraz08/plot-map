@@ -183,7 +183,7 @@ def export_drawing_to_svg(drawing: Drawing) -> str:
     # Include Google Font imports for clean typography
     svg_header = (
         f'<svg width="100%" height="100%" viewBox="0 0 {view_w:.2f} {view_h:.2f}" '
-        f'style="background-color: #fafafa;" xmlns="http://www.w3.org/2000/svg">\n'
+        f'style="background-color: #0b0f19;" xmlns="http://www.w3.org/2000/svg">\n'
         f'<defs>\n'
         f'  <style>\n'
         f'    @import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&amp;display=swap");\n'
@@ -191,6 +191,7 @@ def export_drawing_to_svg(drawing: Drawing) -> str:
         f'  </style>\n'
         f'</defs>\n'
     )
+
     
     svg_body = ""
     # Render layers in structured drafting order (background first, details/annotations on top)

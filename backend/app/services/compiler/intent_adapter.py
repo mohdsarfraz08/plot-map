@@ -131,6 +131,7 @@ def to_design_problem(
             "unmapped_fields": [
                 "constraints",
                 "objectives",
+                "relationships",
             ],
         },
     )

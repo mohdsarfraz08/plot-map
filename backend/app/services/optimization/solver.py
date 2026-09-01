@@ -267,17 +267,31 @@ def solve_layout(
         
         return dx + dy
 
-    # 1. Base Reward: Maximize sizes of all rooms
-    obj = sum(w_vars[name] + h_vars[name] for name in room_names)
+    def _is_rtype(r, target):
+        return target in str(r.get('type', '')).lower() or target in str(r.get('name', '')).lower()
+
+    # 1. Target Proportions & Sizing: Penalize deviation from target size (prevents bloat)
+    dev_vars = {}
+    for r in rooms:
+        name = r['name']
+        t_area = r.get('target_area', r.get('min_area', 100.0))
+        target_semi_p = round(2.0 * math.sqrt(t_area) * S)
+        dev = pulp.LpVariable(f"dev_{name.replace(' ', '_').replace('-', '_')}", lowBound=0, cat=pulp.LpContinuous)
+        prob += dev >= (w_vars[name] + h_vars[name]) - target_semi_p
+        prob += dev >= target_semi_p - (w_vars[name] + h_vars[name])
+        dev_vars[name] = dev
+
+    obj = -4.0 * sum(dev_vars.values())
     
     # 2. Daylight & Ventilation: Reward rooms touching outer envelope boundaries
-    vent_rooms = [r['name'] for r in rooms if r.get('requires_ventilation', False)]
+    vent_rooms = [r['name'] for r in rooms if r.get('requires_ventilation', False) or _is_rtype(r, 'bed') or _is_rtype(r, 'kitchen')]
     vent_rewards = []
     for name in vent_rooms:
-        b_left = pulp.LpVariable(f"b_left_{name.replace(' ', '_')}", cat=pulp.LpBinary)
-        b_right = pulp.LpVariable(f"b_right_{name.replace(' ', '_')}", cat=pulp.LpBinary)
-        b_top = pulp.LpVariable(f"b_top_{name.replace(' ', '_')}", cat=pulp.LpBinary)
-        b_bottom = pulp.LpVariable(f"b_bottom_{name.replace(' ', '_')}", cat=pulp.LpBinary)
+        clean_n = name.replace(' ', '_').replace('-', '_')
+        b_left = pulp.LpVariable(f"b_left_{clean_n}", cat=pulp.LpBinary)
+        b_right = pulp.LpVariable(f"b_right_{clean_n}", cat=pulp.LpBinary)
+        b_top = pulp.LpVariable(f"b_top_{clean_n}", cat=pulp.LpBinary)
+        b_bottom = pulp.LpVariable(f"b_bottom_{clean_n}", cat=pulp.LpBinary)
         
         prob += x_vars[name] <= x_env_min + M * (1 - b_left)
         prob += x_prime_vars[name] >= x_env_max - M * (1 - b_right)
@@ -287,36 +301,59 @@ def solve_layout(
         vent_rewards.append(b_left + b_right + b_top + b_bottom)
         
     if vent_rewards:
-        obj += 10 * sum(vent_rewards)
+        obj += 10.0 * sum(vent_rewards)
         
     # 3. Compact Circulation: Keep Kitchen near Living Room
-    kitchen_name = next((r['name'] for r in rooms if r['type'] == 'Kitchen'), None)
-    living_name = next((r['name'] for r in rooms if r['type'] == 'Living Room'), None)
-    if kitchen_name and living_name:
-        dist_kl = add_distance_vars(kitchen_name, living_name, "kit_liv")
-        if dist_kl is not None:
-            obj -= 2 * dist_kl
+    units = set(r.get('unit_id') for r in rooms if r.get('unit_id'))
+    if units:
+        for u in units:
+            k_name = next((r['name'] for r in rooms if _is_rtype(r, 'kitchen') and r.get('unit_id') == u), None)
+            l_name = next((r['name'] for r in rooms if _is_rtype(r, 'living') and r.get('unit_id') == u), None)
+            if k_name and l_name:
+                dist_kl = add_distance_vars(k_name, l_name, f"kit_liv_{u}")
+                if dist_kl is not None:
+                    obj -= 2.0 * dist_kl
+    else:
+        kitchen_name = next((r['name'] for r in rooms if _is_rtype(r, 'kitchen')), None)
+        living_name = next((r['name'] for r in rooms if _is_rtype(r, 'living')), None)
+        if kitchen_name and living_name:
+            dist_kl = add_distance_vars(kitchen_name, living_name, "kit_liv")
+            if dist_kl is not None:
+                obj -= 2.5 * dist_kl
             
     # 4. Plumbing Alignment: Keep Bathrooms close to each other
-    bath_names = [r['name'] for r in rooms if r['type'] == 'Bathroom']
-    if len(bath_names) >= 2:
+    bath_names = [r['name'] for r in rooms if _is_rtype(r, 'bath')]
+    if len(bath_names) >= 2 and len(rooms) <= 6:
         for idx in range(len(bath_names) - 1):
             dist_bb = add_distance_vars(bath_names[idx], bath_names[idx+1], f"bath_{idx}")
             if dist_bb is not None:
-                obj -= 2 * dist_bb
+                obj -= 2.0 * dist_bb
                 
-    # 5. Bedroom Privacy: Keep Bedrooms away from the Entrance (Road Edge)
-    bedroom_names = [r['name'] for r in rooms if r['type'] == 'Bedroom']
+    # 5. Bedroom Privacy: Keep Bedrooms in quiet rear zone away from Entrance
+    bedroom_names = [r['name'] for r in rooms if _is_rtype(r, 'bed')]
     if bedroom_names:
         for bed_name in bedroom_names:
             if road_edge == 'bottom':
-                obj += 2 * y_vars[bed_name]
+                obj += 3.0 * y_vars[bed_name]
             elif road_edge == 'top':
-                obj -= 2 * y_vars[bed_name]
+                obj -= 3.0 * y_vars[bed_name]
             elif road_edge == 'left':
-                obj += 2 * x_vars[bed_name]
+                obj += 3.0 * x_vars[bed_name]
             elif road_edge == 'right':
-                obj -= 2 * x_vars[bed_name]
+                obj -= 3.0 * x_vars[bed_name]
+                
+    # 6. Public Zone: Keep Living Room along the front road edge
+    living_names = [r['name'] for r in rooms if _is_rtype(r, 'living')]
+    if living_names:
+        for l_name in living_names:
+            if road_edge == 'bottom':
+                obj -= 3.0 * y_vars[l_name]
+            elif road_edge == 'top':
+                obj += 3.0 * y_vars[l_name]
+            elif road_edge == 'left':
+                obj -= 3.0 * x_vars[l_name]
+            elif road_edge == 'right':
+                obj += 3.0 * x_vars[l_name]
                 
     # 6. Multi-Floor Plumbing Alignment: Align bathrooms with lower floor plumbing cores
     if plumbing_cores:

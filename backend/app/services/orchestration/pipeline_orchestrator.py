@@ -326,21 +326,26 @@ class PipelineOrchestrator:
 
         # Identify winning candidate
         if not ranking_result.selected_candidate_ids:
-            # Fallback to top ranked candidate if feasible, else error
+            # Fallback to top ranked candidate if feasible, else top realized candidate
             feasible_ranked = [r for r in ranking_result.ranked_candidates if r.selection_status != SelectionStatus.REJECTED]
             if not feasible_ranked:
-                # Extract specific solver error if present
-                for _, _, real_res in realized_candidates:
-                    if real_res.error_message and "Optimization Constraint Solver Error" in real_res.error_message:
-                        raise OptimizationSolverError(
-                            message="MILP solver failed to pack rooms under the requested constraints.",
-                            detail=real_res.error_message,
-                        )
-                raise OptimizationSolverError(
-                    message="All candidate strategies failed spatial optimization under the requested constraints.",
-                    detail="No candidate could be spatially realized within plot envelope.",
-                )
-            winner_id = feasible_ranked[0].candidate_id
+                realized_success = [c for c, s, r in realized_candidates if r.success]
+                if realized_success:
+                    winner_id = ranking_result.ranked_candidates[0].candidate_id if ranking_result.ranked_candidates else realized_success[0].id
+                else:
+                    # Extract specific solver error if present
+                    for _, _, real_res in realized_candidates:
+                        if real_res.error_message and "Optimization Constraint Solver Error" in real_res.error_message:
+                            raise OptimizationSolverError(
+                                message="MILP solver failed to pack rooms under the requested constraints.",
+                                detail=real_res.error_message,
+                            )
+                    raise OptimizationSolverError(
+                        message="All candidate strategies failed spatial optimization under the requested constraints.",
+                        detail="No candidate could be spatially realized within plot envelope.",
+                    )
+            else:
+                winner_id = feasible_ranked[0].candidate_id
         else:
             winner_id = ranking_result.selected_candidate_ids[0]
 
@@ -677,9 +682,9 @@ class PipelineOrchestrator:
                     total_score=comp_score,
                     scoring_version="3B.6-v1",
                 )
-                sel_status = SelectionStatus.ACCEPTED if real_res.success else SelectionStatus.REJECTED
+                sel_status = SelectionStatus.VIABLE if real_res.success else SelectionStatus.REJECTED
                 reasons = [] if real_res.success else [real_res.error_message or "Spatial realization failed"]
-                tb_key = f"{comp_score:.4f}:{cand.id}"
+                tb_key = [comp_score, spatial_score, strat_score, cand.id]
 
             if not real_res.success:
                 sel_status = SelectionStatus.REJECTED
