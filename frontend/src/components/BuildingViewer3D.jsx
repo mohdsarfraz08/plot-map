@@ -734,7 +734,7 @@ function MockupWireframeMesh() {
     <group position={[0, 6, 0]}>
       <mesh>
         <boxGeometry args={[10, 14, 10]} />
-        <meshBasicMaterial color="#252527" wireframe />
+        <meshBasicMaterial color="#FFFFFF" wireframe />
       </mesh>
     </group>
   )
