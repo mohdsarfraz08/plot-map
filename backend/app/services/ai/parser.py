@@ -79,18 +79,6 @@ def parse_requirements_fallback(prompt: str) -> CompilerIntent:
     elif "two families" in prompt_lower or "2 families" in prompt_lower or "each family" in prompt_lower or "both families" in prompt_lower:
         families_count = 2
 
-    # If two families and sparse rooms, provide full dual unit program
-    if families_count == 2 and len(rooms) <= 2:
-        rooms = [
-            RoomIntent(room_type=RoomCategory.BEDROOM, unit_id="unit-1"),
-            RoomIntent(room_type=RoomCategory.LIVING, unit_id="unit-1"),
-            RoomIntent(room_type=RoomCategory.KITCHEN, unit_id="unit-1"),
-            RoomIntent(room_type=RoomCategory.BATHROOM, unit_id="unit-1"),
-            RoomIntent(room_type=RoomCategory.BEDROOM, unit_id="unit-2"),
-            RoomIntent(room_type=RoomCategory.LIVING, unit_id="unit-2"),
-            RoomIntent(room_type=RoomCategory.KITCHEN, unit_id="unit-2"),
-            RoomIntent(room_type=RoomCategory.BATHROOM, unit_id="unit-2"),
-        ]
 
     # Fallback default room list if none matched
     if not rooms:

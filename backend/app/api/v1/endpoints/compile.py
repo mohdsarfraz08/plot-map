@@ -44,42 +44,74 @@ def compile_layout(
         "failure_type": None,
     }
 
-    # High-Speed Neuro-Symbolic Fast-Track Synthesis (Sub-second response)
-    from app.services.fast_compiler import compile_layout_fast
-    fast_res = compile_layout_fast(request.prompt, client=client, ai_state=ai_state)
-    if fast_res.get("success", False):
-        return CompileResponse(
-            status="success",
-            success=True,
-            message="Layout compiled successfully.",
-            session_id=fast_res.get("session_id", "fast-track-session"),
 
-            selected_candidate_id=fast_res.get("selected_candidate_id", "cand_fast_track"),
-            ranked_alternatives=[
-                CandidateSummary(
-                    candidate_id="cand_fast_track",
-                    strategy_id="strat_optimal",
-                    name="Scale-Invariant Optimal Blueprint",
-                    rank=1,
-                    is_selected=True,
-                    composite_score=0.96,
-                    strategic_score=0.98,
-                    spatial_score=0.94,
-                    feasibility_status="feasible",
-                    trade_offs=["Prioritizes natural daylighting and airtight circulation"],
-                )
-            ],
-            extracted_intent=fast_res.get("extracted_intent", {}),
-            layout=fast_res.get("layout", {}),
-            boundaries=fast_res.get("boundaries", {}),
-            metadata=fast_res.get("metadata", {}),
-            geometry=fast_res.get("geometry", {}),
-            floors=fast_res.get("floors", {}),
-            metrics=fast_res.get("metrics", {}),
-            drawing_svg=fast_res.get("drawing_svg", ""),
-            explanation={"overview": "Scale-Invariant Layout synthesized with airtight boundaries and topological openings."},
-        )
+    # High-Speed Neuro-Symbolic Fast-Track Synthesis for interactive frontend briefs
+    if "design brief:" in request.prompt.lower():
+        from app.services.fast_compiler import compile_layout_fast
+        from app.services.orchestration.session_registry import CandidateRecord
 
+        fast_res = compile_layout_fast(request.prompt, client=client, ai_state=ai_state)
+        if fast_res.get("success", False):
+            registry = get_session_registry()
+            selected_cand_id = fast_res.get("selected_candidate_id", "cand_fast_track")
+            session = registry.create_session(
+                prompt=request.prompt,
+                selected_candidate_id=selected_cand_id,
+                intent=fast_res.get("extracted_intent", {}),
+                metadata=fast_res.get("metadata", {}),
+            )
+            cand_record = CandidateRecord(
+                candidate_id=selected_cand_id,
+                strategy_id="strat_optimal",
+                name="Scale-Invariant Optimal Blueprint",
+                rank=1,
+                is_selected=True,
+                status="success",
+                strategic_score=0.98,
+                spatial_score=0.94,
+                composite_score=0.96,
+                trade_offs=["Prioritizes natural daylighting and airtight circulation"],
+                rejection_reasons=[],
+                layout=fast_res.get("layout", {}),
+                boundaries=fast_res.get("boundaries", {}),
+                geometry=fast_res.get("geometry", {}),
+                floors=fast_res.get("floors", {}),
+                metrics=fast_res.get("metrics", {}),
+                drawing_svg=fast_res.get("drawing_svg", ""),
+                explanation={"overall_concept": "Scale-Invariant Layout synthesized with airtight boundaries and topological openings."},
+            )
+            registry.store_candidate(session.session_id, cand_record)
+
+            return CompileResponse(
+                status="success",
+                success=True,
+                message="Layout compiled successfully.",
+                session_id=session.session_id,
+                selected_candidate_id=selected_cand_id,
+                ranked_alternatives=[
+                    CandidateSummary(
+                        candidate_id=selected_cand_id,
+                        strategy_id="strat_optimal",
+                        name="Scale-Invariant Optimal Blueprint",
+                        rank=1,
+                        is_selected=True,
+                        composite_score=0.96,
+                        strategic_score=0.98,
+                        spatial_score=0.94,
+                        feasibility_status="feasible",
+                        trade_offs=["Prioritizes natural daylighting and airtight circulation"],
+                    )
+                ],
+                extracted_intent=fast_res.get("extracted_intent", {}),
+                layout=fast_res.get("layout", {}),
+                boundaries=fast_res.get("boundaries", {}),
+                metadata=fast_res.get("metadata", {}),
+                geometry=fast_res.get("geometry", {}),
+                floors=fast_res.get("floors", {}),
+                metrics=fast_res.get("metrics", {}),
+                drawing_svg=fast_res.get("drawing_svg", ""),
+                explanation={"overall_concept": "Scale-Invariant Layout synthesized with airtight boundaries and topological openings."},
+            )
 
     orchestrator = PipelineOrchestrator(
         session_registry=get_session_registry(),

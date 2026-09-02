@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { Canvas, useThree } from '@react-three/fiber'
-import { OrbitControls, Grid, Html } from '@react-three/drei'
-import { Maximize2, Minimize2 } from 'lucide-react'
+import { OrbitControls, Grid, Html, GizmoHelper, GizmoViewport } from '@react-three/drei'
+import { Maximize2, Minimize2, Compass, Ruler, Navigation, Eye } from 'lucide-react'
+
 
 const roomColors = {
   "Entrance": "#a6adc8",       // Cool Slate
@@ -15,6 +16,37 @@ const roomColors = {
   "Staircase": "#f59e0b",       // Amber
 }
 
+class CanvasErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("Canvas 3D Error caught by Boundary:", error, errorInfo)
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-6 text-center bg-[#07070a] text-slate-300 font-mono">
+          <div className="text-amber-400 font-semibold mb-2">3D Viewport Notice</div>
+          <div className="text-xs text-slate-400 max-w-md">
+            Rendering fallback active. You can switch to the 2D CAD Blueprint view for full structural plans.
+          </div>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="mt-4 px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 cursor-pointer"
+          >
+            Retry 3D Rendering
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 // Helper to determine if an opening is hosted by a wall segment
 function getOpeningsOnWall(wall, openings, tolerance = 0.5) {
@@ -317,51 +349,91 @@ function ProceduralWall3D({
   return <group>{panels}</group>
 }
 
-// 3D Procedural Floor Slab with Single Draw Call & Stair Cutout Hole
+// 3D Procedural Floor Slab with Robust Constructive Geometry
 function ProceduralSlab3D({ plotWidth, plotDepth, fLevel, stairCoreRect, baseZ }) {
-  const slabShape = useMemo(() => {
-    const shape = new THREE.Shape()
-    const hw = (plotWidth - 0.1) / 2
-    const hd = (plotDepth - 0.1) / 2
+  const slabThickness = 0.5 // 6-inch architectural RCC structural thickness
+  const hw = (plotWidth - 0.1) / 2
+  const hd = (plotDepth - 0.1) / 2
 
-    // Outer perimeter
-    shape.moveTo(-hw, -hd)
-    shape.lineTo(hw, -hd)
-    shape.lineTo(hw, hd)
-    shape.lineTo(-hw, hd)
-    shape.closePath()
+  // If upper floor and stairCoreRect exists, subdivide slab around the stairwell cutout
+  if (fLevel > 1 && stairCoreRect) {
+    const minX = -hw
+    const maxX = hw
+    const minZ = -hd
+    const maxZ = hd
 
-    // Punch stairwell hole if fLevel > 1
-    if (fLevel > 1 && stairCoreRect) {
-      const hole = new THREE.Path()
-      const sx1 = stairCoreRect.x - plotWidth / 2
-      const sz1 = stairCoreRect.y - plotDepth / 2
-      const sx2 = sx1 + stairCoreRect.w
-      const sz2 = sz1 + stairCoreRect.h
+    const rawSx1 = stairCoreRect.x - plotWidth / 2
+    const rawSz1 = stairCoreRect.y - plotDepth / 2
+    const rawSx2 = rawSx1 + stairCoreRect.w
+    const rawSz2 = rawSz1 + stairCoreRect.h
 
-      hole.moveTo(sx1, sz1)
-      hole.lineTo(sx2, sz1)
-      hole.lineTo(sx2, sz2)
-      hole.lineTo(sx1, sz2)
-      hole.closePath()
+    // Clamp hole coordinates cleanly inside slab bounds
+    const hMinX = Math.max(minX, Math.min(maxX, rawSx1))
+    const hMaxX = Math.max(minX, Math.min(maxX, rawSx2))
+    const hMinZ = Math.max(minZ, Math.min(maxZ, rawSz1))
+    const hMaxZ = Math.max(minZ, Math.min(maxZ, rawSz2))
 
-      shape.holes.push(hole)
+    const subSlabs = []
+
+    // 1. Left slab (from minX to hMinX)
+    if (hMinX - minX > 0.05) {
+      const w = hMinX - minX
+      const cx = minX + w / 2
+      subSlabs.push(
+        <mesh key="slab-left" position={[cx, baseZ + slabThickness / 2, 0]}>
+          <boxGeometry args={[w, slabThickness, plotDepth - 0.1]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.8} />
+        </mesh>
+      )
     }
 
-    return shape
-  }, [plotWidth, plotDepth, fLevel, stairCoreRect])
+    // 2. Right slab (from hMaxX to maxX)
+    if (maxX - hMaxX > 0.05) {
+      const w = maxX - hMaxX
+      const cx = hMaxX + w / 2
+      subSlabs.push(
+        <mesh key="slab-right" position={[cx, baseZ + slabThickness / 2, 0]}>
+          <boxGeometry args={[w, slabThickness, plotDepth - 0.1]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.8} />
+        </mesh>
+      )
+    }
 
+    // 3. Front slab (between hMinX & hMaxX, from minZ to hMinZ)
+    if (hMaxX - hMinX > 0.05 && hMinZ - minZ > 0.05) {
+      const w = hMaxX - hMinX
+      const d = hMinZ - minZ
+      const cx = (hMinX + hMaxX) / 2
+      const cz = minZ + d / 2
+      subSlabs.push(
+        <mesh key="slab-front" position={[cx, baseZ + slabThickness / 2, cz]}>
+          <boxGeometry args={[w, slabThickness, d]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.8} />
+        </mesh>
+      )
+    }
+
+    // 4. Back slab (between hMinX & hMaxX, from hMaxZ to maxZ)
+    if (hMaxX - hMinX > 0.05 && maxZ - hMaxZ > 0.05) {
+      const w = hMaxX - hMinX
+      const d = maxZ - hMaxZ
+      const cx = (hMinX + hMaxX) / 2
+      const cz = hMaxZ + d / 2
+      subSlabs.push(
+        <mesh key="slab-back" position={[cx, baseZ + slabThickness / 2, cz]}>
+          <boxGeometry args={[w, slabThickness, d]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.8} />
+        </mesh>
+      )
+    }
+
+    return <group>{subSlabs}</group>
+  }
+
+  // Full solid slab for ground floor or when no stair core is specified
   return (
-    <mesh position={[0, baseZ, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-      <extrudeGeometry
-        args={[
-          slabShape,
-          {
-            depth: 0.5, // 6-inch architectural RCC structural thickness
-            bevelEnabled: false,
-          }
-        ]}
-      />
+    <mesh position={[0, baseZ + slabThickness / 2, 0]}>
+      <boxGeometry args={[plotWidth - 0.1, slabThickness, plotDepth - 0.1]} />
       <meshStandardMaterial color="#1e293b" roughness={0.8} />
     </mesh>
   )
@@ -369,28 +441,10 @@ function ProceduralSlab3D({ plotWidth, plotDepth, fLevel, stairCoreRect, baseZ }
 
 // 3D Roof Terrace with Parapet Walls and Staircase Headroom Cabin (Mumty)
 function ProceduralRoofAndMumty3D({ plotWidth, plotDepth, topZ, stairCoreRect }) {
-  const parapetShape = useMemo(() => {
-    const shape = new THREE.Shape()
-    const hw = (plotWidth - 0.1) / 2
-    const hd = (plotDepth - 0.1) / 2
-    const t = 0.5 // 6-inch parapet thickness
-
-    shape.moveTo(-hw, -hd)
-    shape.lineTo(hw, -hd)
-    shape.lineTo(hw, hd)
-    shape.lineTo(-hw, hd)
-    shape.closePath()
-
-    const hole = new THREE.Path()
-    hole.moveTo(-hw + t, -hd + t)
-    hole.lineTo(hw - t, -hd + t)
-    hole.lineTo(hw - t, hd - t)
-    hole.lineTo(-hw + t, hd - t)
-    hole.closePath()
-
-    shape.holes.push(hole)
-    return shape
-  }, [plotWidth, plotDepth])
+  const parapetHeight = 3.0 // 3.0 ft height
+  const t = 0.5 // 6-inch parapet thickness
+  const w = plotWidth - 0.1
+  const d = plotDepth - 0.1
 
   return (
     <group position={[0, topZ, 0]}>
@@ -404,18 +458,28 @@ function ProceduralRoofAndMumty3D({ plotWidth, plotDepth, topZ, stairCoreRect })
       />
 
       {/* 2. Perimeter Parapet Wall (3.0 ft height) */}
-      <mesh position={[0, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <extrudeGeometry
-          args={[
-            parapetShape,
-            {
-              depth: 3.0, // 3.0 ft height
-              bevelEnabled: false,
-            }
-          ]}
-        />
-        <meshStandardMaterial color="#334155" roughness={0.6} />
-      </mesh>
+      <group position={[0, parapetHeight / 2, 0]}>
+        {/* Front Parapet */}
+        <mesh position={[0, 0, -d / 2 + t / 2]}>
+          <boxGeometry args={[w, parapetHeight, t]} />
+          <meshStandardMaterial color="#334155" roughness={0.6} />
+        </mesh>
+        {/* Back Parapet */}
+        <mesh position={[0, 0, d / 2 - t / 2]}>
+          <boxGeometry args={[w, parapetHeight, t]} />
+          <meshStandardMaterial color="#334155" roughness={0.6} />
+        </mesh>
+        {/* Left Parapet */}
+        <mesh position={[-w / 2 + t / 2, 0, 0]}>
+          <boxGeometry args={[t, parapetHeight, Math.max(0.1, d - 2 * t)]} />
+          <meshStandardMaterial color="#334155" roughness={0.6} />
+        </mesh>
+        {/* Right Parapet */}
+        <mesh position={[w / 2 - t / 2, 0, 0]}>
+          <boxGeometry args={[t, parapetHeight, Math.max(0.1, d - 2 * t)]} />
+          <meshStandardMaterial color="#334155" roughness={0.6} />
+        </mesh>
+      </group>
 
       {/* 3. Staircase Headroom Cabin (Mumty) */}
       {stairCoreRect && (
@@ -676,9 +740,286 @@ function MockupWireframeMesh() {
   )
 }
 
+/* =========================================================================
+   3D CAD Architectural Visualization Primitives (Dimensions, Compass, Axes)
+   ========================================================================= */
+
+function CADDimensions3D({ plotWidth, plotDepth, buildingHeight, isVisible }) {
+  if (!isVisible || !plotWidth || !plotDepth) return null
+
+  const w = plotWidth
+  const d = plotDepth
+  const h = buildingHeight || 10
+  const dimOffset = 3.0
+  const tickSize = 0.9
+  const lineThick = 0.08
+
+  return (
+    <group position={[0, 0.05, 0]}>
+      {/* 1. FRONT WIDTH DIMENSION (X-AXIS) */}
+      <group position={[0, 0, -d / 2 - dimOffset]}>
+        <mesh position={[0, 0.1, 0]}>
+          <boxGeometry args={[w, lineThick, lineThick]} />
+          <meshStandardMaterial color="#0284c7" emissive="#0284c7" emissiveIntensity={0.6} />
+        </mesh>
+        {/* Left extension line */}
+        <mesh position={[-w / 2, 0.1, dimOffset / 2]}>
+          <boxGeometry args={[lineThick, lineThick, dimOffset + 0.5]} />
+          <meshStandardMaterial color="#475569" />
+        </mesh>
+        {/* Right extension line */}
+        <mesh position={[w / 2, 0.1, dimOffset / 2]}>
+          <boxGeometry args={[lineThick, lineThick, dimOffset + 0.5]} />
+          <meshStandardMaterial color="#475569" />
+        </mesh>
+        {/* 45-deg CAD Ticks */}
+        <mesh position={[-w / 2, 0.1, 0]} rotation={[0, Math.PI / 4, 0]}>
+          <boxGeometry args={[tickSize, lineThick * 1.6, lineThick * 1.6]} />
+          <meshStandardMaterial color="#38bdf8" />
+        </mesh>
+        <mesh position={[w / 2, 0.1, 0]} rotation={[0, Math.PI / 4, 0]}>
+          <boxGeometry args={[tickSize, lineThick * 1.6, lineThick * 1.6]} />
+          <meshStandardMaterial color="#38bdf8" />
+        </mesh>
+        {/* Floating Width Measurement Badge */}
+        <Html position={[0, 0.45, 0]} center distanceFactor={22}>
+          <div className="bg-[#0b0f19]/95 border border-sky-500/80 px-2 py-0.5 rounded text-[10px] font-mono text-sky-300 font-bold whitespace-nowrap shadow-2xl backdrop-blur-xs flex items-center gap-1.5 select-none pointer-events-none">
+            <span className="text-sky-400">↔</span>
+            <span>WIDTH: {Math.round(w)}′-0″ ({w.toFixed(1)} ft)</span>
+          </div>
+        </Html>
+      </group>
+
+      {/* 2. SIDE DEPTH DIMENSION (Z-AXIS) */}
+      <group position={[-w / 2 - dimOffset, 0, 0]}>
+        <mesh position={[0, 0.1, 0]}>
+          <boxGeometry args={[lineThick, lineThick, d]} />
+          <meshStandardMaterial color="#0284c7" emissive="#0284c7" emissiveIntensity={0.6} />
+        </mesh>
+        {/* Front extension line */}
+        <mesh position={[dimOffset / 2, 0.1, -d / 2]}>
+          <boxGeometry args={[dimOffset + 0.5, lineThick, lineThick]} />
+          <meshStandardMaterial color="#475569" />
+        </mesh>
+        {/* Rear extension line */}
+        <mesh position={[dimOffset / 2, 0.1, d / 2]}>
+          <boxGeometry args={[dimOffset + 0.5, lineThick, lineThick]} />
+          <meshStandardMaterial color="#475569" />
+        </mesh>
+        {/* 45-deg CAD Ticks */}
+        <mesh position={[0, 0.1, -d / 2]} rotation={[0, Math.PI / 4, 0]}>
+          <boxGeometry args={[tickSize, lineThick * 1.6, lineThick * 1.6]} />
+          <meshStandardMaterial color="#38bdf8" />
+        </mesh>
+        <mesh position={[0, 0.1, d / 2]} rotation={[0, Math.PI / 4, 0]}>
+          <boxGeometry args={[tickSize, lineThick * 1.6, lineThick * 1.6]} />
+          <meshStandardMaterial color="#38bdf8" />
+        </mesh>
+        {/* Floating Depth Measurement Badge */}
+        <Html position={[0, 0.45, 0]} center distanceFactor={22}>
+          <div className="bg-[#0b0f19]/95 border border-sky-500/80 px-2 py-0.5 rounded text-[10px] font-mono text-sky-300 font-bold whitespace-nowrap shadow-2xl backdrop-blur-xs flex items-center gap-1.5 select-none pointer-events-none">
+            <span className="text-sky-400">↕</span>
+            <span>DEPTH: {Math.round(d)}′-0″ ({d.toFixed(1)} ft)</span>
+          </div>
+        </Html>
+      </group>
+
+      {/* 3. VERTICAL HEIGHT DIMENSION (Y-AXIS) */}
+      <group position={[-w / 2 - 1.8, 0, -d / 2 - 1.8]}>
+        <mesh position={[0, h / 2, 0]}>
+          <boxGeometry args={[lineThick, h, lineThick]} />
+          <meshStandardMaterial color="#059669" emissive="#059669" emissiveIntensity={0.6} />
+        </mesh>
+        {/* Ground and Top extension flags */}
+        <mesh position={[0.7, 0.05, 0.7]}>
+          <boxGeometry args={[1.4, lineThick, 1.4]} />
+          <meshStandardMaterial color="#475569" />
+        </mesh>
+        <mesh position={[0.7, h, 0.7]}>
+          <boxGeometry args={[1.4, lineThick, 1.4]} />
+          <meshStandardMaterial color="#475569" />
+        </mesh>
+        {/* Ticks */}
+        <mesh position={[0, 0.05, 0]}>
+          <boxGeometry args={[tickSize, lineThick * 2, tickSize]} />
+          <meshStandardMaterial color="#10b981" />
+        </mesh>
+        <mesh position={[0, h, 0]}>
+          <boxGeometry args={[tickSize, lineThick * 2, tickSize]} />
+          <meshStandardMaterial color="#10b981" />
+        </mesh>
+        {/* Floating Height Badge */}
+        <Html position={[0, h / 2, 0]} center distanceFactor={22}>
+          <div className="bg-[#0b0f19]/95 border border-emerald-500/80 px-2 py-0.5 rounded text-[10px] font-mono text-emerald-300 font-bold whitespace-nowrap shadow-2xl backdrop-blur-xs flex items-center gap-1.5 select-none pointer-events-none">
+            <span className="text-emerald-400">▲</span>
+            <span>HEIGHT: {Math.round(h)}′-0″ ({h.toFixed(1)} ft)</span>
+          </div>
+        </Html>
+      </group>
+    </group>
+  )
+}
+
+function CADCompassAndDirections3D({ plotWidth, plotDepth, isVisible }) {
+  if (!isVisible || !plotWidth || !plotDepth) return null
+
+  const w = plotWidth
+  const d = plotDepth
+  const cx = w / 2 + 5.5
+  const cz = -d / 2 + 5.5
+
+  return (
+    <group>
+      {/* 1. FRONT ROAD / STREET ACCESS RIBBON */}
+      <group position={[0, 0.02, -d / 2 - 5.5]}>
+        <mesh position={[0, 0, 0]}>
+          <boxGeometry args={[w + 14, 0.03, 3.8]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.9} />
+        </mesh>
+
+        {/* Center dashed line markings */}
+        {[-3, -1.5, 0, 1.5, 3].map((off, idx) => (
+          <mesh key={`dash-${idx}`} position={[off * (w / 3.2), 0.03, 0]}>
+            <boxGeometry args={[2.5, 0.02, 0.2]} />
+            <meshBasicMaterial color="#f8fafc" />
+          </mesh>
+        ))}
+
+        {/* Road Frontage Indicator Badge */}
+        <Html position={[0, 0.35, 0]} center distanceFactor={22}>
+          <div className="bg-[#0b0f19]/95 border border-sky-400/90 px-3 py-1 rounded text-[10px] font-mono text-sky-300 font-bold tracking-wider shadow-2xl backdrop-blur-xs flex items-center gap-2 whitespace-nowrap select-none pointer-events-none">
+            <span className="text-amber-400 font-black">▲</span>
+            <span>12.0M FRONT ROAD ACCESS (NBC 2016 COMPLIANT)</span>
+            <span className="text-amber-400 font-black">▲</span>
+          </div>
+        </Html>
+      </group>
+
+      {/* 2. GROUND CAD COMPASS ROSE */}
+      <group position={[cx, 0.04, cz]}>
+        {/* Outer Ring */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[2.2, 2.35, 32]} />
+          <meshBasicMaterial color="#38bdf8" />
+        </mesh>
+        {/* Inner subtle disc */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[2.2, 32]} />
+          <meshBasicMaterial color="#0f172a" transparent opacity={0.7} />
+        </mesh>
+        {/* North Pointer Needle (Pointing towards +Z Rear) */}
+        <mesh position={[0, 0.02, 1.1]}>
+          <coneGeometry args={[0.35, 1.7, 4]} />
+          <meshStandardMaterial color="#ef4444" emissive="#ef4444" emissiveIntensity={0.6} />
+        </mesh>
+        {/* South Needle Pointer */}
+        <mesh position={[0, 0.02, -1.1]} rotation={[0, Math.PI, 0]}>
+          <coneGeometry args={[0.35, 1.7, 4]} />
+          <meshStandardMaterial color="#64748b" />
+        </mesh>
+        {/* Pivot pin */}
+        <mesh position={[0, 0.04, 0]}>
+          <cylinderGeometry args={[0.18, 0.18, 0.08, 16]} />
+          <meshStandardMaterial color="#f8fafc" />
+        </mesh>
+
+        {/* Cardinal North Label */}
+        <Html position={[0, 0.25, 2.6]} center distanceFactor={18}>
+          <div className="bg-[#0b0f19]/95 border border-red-500/80 px-1.5 py-0.5 rounded text-[10px] font-mono text-red-400 font-black shadow-lg select-none pointer-events-none">
+            ⮝ NORTH (+Z)
+          </div>
+        </Html>
+        {/* East / West / South Markers */}
+        <Html position={[2.5, 0.25, 0]} center distanceFactor={18}>
+          <div className="text-[9px] font-mono text-slate-400 font-bold select-none pointer-events-none">E</div>
+        </Html>
+        <Html position={[-2.5, 0.25, 0]} center distanceFactor={18}>
+          <div className="text-[9px] font-mono text-slate-400 font-bold select-none pointer-events-none">W</div>
+        </Html>
+        <Html position={[0, 0.25, -2.5]} center distanceFactor={18}>
+          <div className="text-[9px] font-mono text-slate-400 font-bold select-none pointer-events-none">S</div>
+        </Html>
+      </group>
+    </group>
+  )
+}
+
+function CADOriginAxesGizmo3D({ plotWidth, plotDepth, isVisible }) {
+  if (!isVisible || !plotWidth || !plotDepth) return null
+
+  const ox = -plotWidth / 2
+  const oy = 0.05
+  const oz = -plotDepth / 2
+  const axisLen = 5.5
+  const radius = 0.05
+
+  return (
+    <group position={[ox, oy, oz]}>
+      {/* Central Origin Node */}
+      <mesh position={[0, 0, 0]}>
+        <sphereGeometry args={[0.18, 16, 16]} />
+        <meshStandardMaterial color="#f8fafc" emissive="#f8fafc" emissiveIntensity={0.6} />
+      </mesh>
+
+      {/* X Axis (Red - Width) */}
+      <group position={[axisLen / 2, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
+        <mesh>
+          <cylinderGeometry args={[radius, radius, axisLen, 8]} />
+          <meshStandardMaterial color="#ef4444" emissive="#ef4444" emissiveIntensity={0.5} />
+        </mesh>
+      </group>
+      <mesh position={[axisLen + 0.25, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
+        <coneGeometry args={[0.2, 0.5, 8]} />
+        <meshStandardMaterial color="#ef4444" emissive="#ef4444" emissiveIntensity={0.8} />
+      </mesh>
+      <Html position={[axisLen + 1.1, 0.2, 0]} center distanceFactor={18}>
+        <span className="bg-[#450a0a]/90 border border-red-500/80 px-1.5 py-0.5 rounded text-[9px] font-mono text-red-300 font-bold shadow-md select-none pointer-events-none">
+          +X (Width)
+        </span>
+      </Html>
+
+      {/* Y Axis (Green - Elevation / Height) */}
+      <group position={[0, axisLen / 2, 0]}>
+        <mesh>
+          <cylinderGeometry args={[radius, radius, axisLen, 8]} />
+          <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={0.5} />
+        </mesh>
+      </group>
+      <mesh position={[0, axisLen + 0.25, 0]}>
+        <coneGeometry args={[0.2, 0.5, 8]} />
+        <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={0.8} />
+      </mesh>
+      <Html position={[0, axisLen + 1.1, 0]} center distanceFactor={18}>
+        <span className="bg-[#052e16]/90 border border-emerald-500/80 px-1.5 py-0.5 rounded text-[9px] font-mono text-emerald-300 font-bold shadow-md select-none pointer-events-none">
+          +Y (Height)
+        </span>
+      </Html>
+
+      {/* Z Axis (Blue - Depth / Rear) */}
+      <group position={[0, 0, axisLen / 2]} rotation={[Math.PI / 2, 0, 0]}>
+        <mesh>
+          <cylinderGeometry args={[radius, radius, axisLen, 8]} />
+          <meshStandardMaterial color="#3b82f6" emissive="#3b82f6" emissiveIntensity={0.5} />
+        </mesh>
+      </group>
+      <mesh position={[0, 0, axisLen + 0.25]} rotation={[Math.PI / 2, 0, 0]}>
+        <coneGeometry args={[0.2, 0.5, 8]} />
+        <meshStandardMaterial color="#3b82f6" emissive="#3b82f6" emissiveIntensity={0.8} />
+      </mesh>
+      <Html position={[0, 0.2, axisLen + 1.1]} center distanceFactor={18}>
+        <span className="bg-[#172554]/90 border border-blue-500/80 px-1.5 py-0.5 rounded text-[9px] font-mono text-blue-300 font-bold shadow-md select-none pointer-events-none">
+          +Z (Depth)
+        </span>
+      </Html>
+    </group>
+  )
+}
 
 export function BuildingViewer3D({ buildingData, isLoading, isFullscreen, onToggleFullscreen }) {
   const [activeFloorFilter, setActiveFloorFilter] = useState('all')
+  const [showDimensions, setShowDimensions] = useState(true)
+  const [showCompass, setShowCompass] = useState(true)
+  const [showAxes, setShowAxes] = useState(true)
   const controlsRef = useRef(null)
 
   // Extract only floors that actually exist and contain real spatial data
@@ -707,6 +1048,30 @@ export function BuildingViewer3D({ buildingData, isLoading, isFullscreen, onTogg
     }
   }, [actualFloors, activeFloorFilter])
 
+  // Snap camera to CAD viewport presets (Isometric, Front, Top, Side)
+  const setCameraView = (view) => {
+    if (!controlsRef?.current) return
+    const plotW = buildingData?.width || 40
+    const plotD = buildingData?.depth || 40
+    const h = (actualFloors?.length || 1) * 10
+    const maxDim = Math.max(plotW, plotD, h)
+    const dist = maxDim * 1.35
+    const centerY = h / 2
+
+    controlsRef.current.target.set(0, centerY, 0)
+
+    if (view === 'iso') {
+      controlsRef.current.object.position.set(-dist * 0.45, centerY + dist * 0.85, -dist * 0.95)
+    } else if (view === 'front') {
+      controlsRef.current.object.position.set(0, centerY + 1, -dist * 1.2)
+    } else if (view === 'top') {
+      controlsRef.current.object.position.set(0, dist * 1.5, 0.01)
+    } else if (view === 'side') {
+      controlsRef.current.object.position.set(-dist * 1.25, centerY + 1, 0)
+    }
+    controlsRef.current.update()
+  }
+
   return (
     <div className="relative w-full h-full bg-[#0a0a0f] flex flex-col">
       {/* Floors selection controls: Data-Driven Floor Tabs */}
@@ -730,84 +1095,181 @@ export function BuildingViewer3D({ buildingData, isLoading, isFullscreen, onTogg
         </div>
       )}
 
-      {/* Fullscreen Overlay Button for 3D View */}
-      {onToggleFullscreen && (
-        <button
-          onClick={onToggleFullscreen}
-          className="absolute top-4 right-4 z-10 bg-[#0d0e15]/80 hover:bg-card text-muted-foreground hover:text-foreground border border-border p-2 rounded-sm shadow-md transition-colors cursor-pointer flex items-center justify-center"
-          title={isFullscreen ? "Exit Fullscreen (Esc)" : "Fullscreen Mode"}
-        >
-          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-        </button>
-      )}
+      {/* Top Controls: Interactive CAD Toolbar & Fullscreen Overlay Button */}
+      <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+        {/* CAD Camera View Presets */}
+        {buildingData && (
+          <div className="flex items-center gap-1 bg-[#0d0e15]/90 border border-border p-1 rounded-sm shadow-md font-mono text-[10px]">
+            <button
+              onClick={() => setCameraView('iso')}
+              className="px-2 py-1 uppercase text-slate-300 hover:text-primary hover:bg-card transition-colors cursor-pointer rounded-xs"
+              title="Axonometric Isometric View"
+            >
+              Iso
+            </button>
+            <button
+              onClick={() => setCameraView('front')}
+              className="px-2 py-1 uppercase text-slate-300 hover:text-primary hover:bg-card transition-colors cursor-pointer rounded-xs"
+              title="Front Facade Elevation"
+            >
+              Front
+            </button>
+            <button
+              onClick={() => setCameraView('top')}
+              className="px-2 py-1 uppercase text-slate-300 hover:text-primary hover:bg-card transition-colors cursor-pointer rounded-xs"
+              title="Top-Down Plan View"
+            >
+              Top
+            </button>
+            <button
+              onClick={() => setCameraView('side')}
+              className="px-2 py-1 uppercase text-slate-300 hover:text-primary hover:bg-card transition-colors cursor-pointer rounded-xs"
+              title="Side Elevation View"
+            >
+              Side
+            </button>
+          </div>
+        )}
+
+        {/* CAD Element Toggles (Dimensions, Compass, XYZ) */}
+        {buildingData && (
+          <div className="flex items-center gap-1 bg-[#0d0e15]/90 border border-border p-1 rounded-sm shadow-md font-mono text-[10px]">
+            <button
+              onClick={() => setShowDimensions(prev => !prev)}
+              className={`px-2 py-1 uppercase rounded-xs transition-colors cursor-pointer ${showDimensions ? 'bg-sky-500/20 text-sky-400 font-bold' : 'text-muted-foreground hover:text-foreground'}`}
+              title="Toggle 3D CAD Dimensions"
+            >
+              📐 Dims
+            </button>
+            <button
+              onClick={() => setShowCompass(prev => !prev)}
+              className={`px-2 py-1 uppercase rounded-xs transition-colors cursor-pointer ${showCompass ? 'bg-sky-500/20 text-sky-400 font-bold' : 'text-muted-foreground hover:text-foreground'}`}
+              title="Toggle Compass & Road Banner"
+            >
+              🧭 Road
+            </button>
+            <button
+              onClick={() => setShowAxes(prev => !prev)}
+              className={`px-2 py-1 uppercase rounded-xs transition-colors cursor-pointer ${showAxes ? 'bg-sky-500/20 text-sky-400 font-bold' : 'text-muted-foreground hover:text-foreground'}`}
+              title="Toggle Origin XYZ Axes"
+            >
+              📍 XYZ
+            </button>
+          </div>
+        )}
+
+        {/* Fullscreen Overlay Button */}
+        {onToggleFullscreen && (
+          <button
+            onClick={onToggleFullscreen}
+            className="bg-[#0d0e15]/80 hover:bg-card text-muted-foreground hover:text-foreground border border-border p-2 rounded-sm shadow-md transition-colors cursor-pointer flex items-center justify-center"
+            title={isFullscreen ? "Exit Fullscreen (Esc)" : "Fullscreen Mode"}
+          >
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+        )}
+      </div>
 
       {/* ThreeJS R3F Canvas */}
       <div className="flex-1 w-full h-full relative">
-        <Canvas
-          camera={{
-            position: [40, 35, 40],
-            fov: 40,
-            near: 0.1,
-            far: 1000,
-          }}
-          dpr={[1, 2]}
-        >
-          <color attach="background" args={['#07070a']} />
+        <CanvasErrorBoundary>
+          <Canvas
+            camera={{
+              position: [40, 35, 40],
+              fov: 40,
+              near: 0.1,
+              far: 1000,
+            }}
+            dpr={[1, 2]}
+          >
+            <color attach="background" args={['#07070a']} />
 
-          {/* Lighting systems */}
-          <ambientLight intensity={0.6} color="#ffffff" />
-          <directionalLight position={[30, 45, 20]} intensity={1.2} color="#ffffff" castShadow />
-          <directionalLight position={[-20, 20, -25]} intensity={0.5} color="#818cf8" />
-          <pointLight position={[0, 15, 0]} intensity={0.3} color="#38bdf8" />
+            {/* Lighting systems */}
+            <ambientLight intensity={0.6} color="#ffffff" />
+            <directionalLight position={[30, 45, 20]} intensity={1.2} color="#ffffff" castShadow />
+            <directionalLight position={[-20, 20, -25]} intensity={0.5} color="#818cf8" />
+            <pointLight position={[0, 15, 0]} intensity={0.3} color="#38bdf8" />
 
-          {/* Grid base */}
-          <Grid
-            args={[100, 100]}
-            cellSize={1}
-            cellColor="#555555"
-            sectionSize={5}
-            sectionColor="#777777"
-            fadeStrength={0.7}
-            fadeDistance={75}
-            infiniteGrid
-          />
-
-          {/* Camera Auto-Fitter */}
-          {buildingData && (
-            <CameraBoundsFitter
-              plotWidth={buildingData.width || 40}
-              plotDepth={buildingData.depth || 40}
-              buildingHeight={actualFloors.length * 10}
-              activeFloorFilter={activeFloorFilter}
-              controlsRef={controlsRef}
+            {/* Grid base */}
+            <Grid
+              args={[100, 100]}
+              cellSize={1}
+              cellColor="#555555"
+              sectionSize={5}
+              sectionColor="#777777"
+              fadeStrength={0.7}
+              fadeDistance={75}
+              infiniteGrid
             />
-          )}
 
-          {/* Procedural 3D model generator or Mockup Wireframe Mesh */}
-          {buildingData ? (
-            <BuildingModel
-              buildingData={buildingData}
-              activeFloorFilter={activeFloorFilter}
-              actualFloors={actualFloors}
+            {/* Camera Auto-Fitter */}
+            {buildingData && (
+              <CameraBoundsFitter
+                plotWidth={buildingData.width || 40}
+                plotDepth={buildingData.depth || 40}
+                buildingHeight={actualFloors.length * 10}
+                activeFloorFilter={activeFloorFilter}
+                controlsRef={controlsRef}
+              />
+            )}
+
+            {/* Procedural 3D model generator or Mockup Wireframe Mesh */}
+            {buildingData ? (
+              <group>
+                <BuildingModel
+                  buildingData={buildingData}
+                  activeFloorFilter={activeFloorFilter}
+                  actualFloors={actualFloors}
+                />
+
+                {/* 3D CAD Dimensions */}
+                <CADDimensions3D
+                  plotWidth={buildingData.width}
+                  plotDepth={buildingData.depth}
+                  buildingHeight={actualFloors.length * 10}
+                  isVisible={showDimensions}
+                />
+
+                {/* 3D CAD Compass & Front Road Banner */}
+                <CADCompassAndDirections3D
+                  plotWidth={buildingData.width}
+                  plotDepth={buildingData.depth}
+                  isVisible={showCompass}
+                />
+
+                {/* 3D CAD Origin XYZ Triad */}
+                <CADOriginAxesGizmo3D
+                  plotWidth={buildingData.width}
+                  plotDepth={buildingData.depth}
+                  isVisible={showAxes}
+                />
+              </group>
+            ) : (
+              <MockupWireframeMesh />
+            )}
+
+            {/* Interactive CAD Orientation Viewport Triad Gizmo in bottom-right */}
+            <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
+              <GizmoViewport
+                axisColors={['#ef4444', '#22c55e', '#3b82f6']}
+                labelColor="#ffffff"
+              />
+            </GizmoHelper>
+
+            {/* Orbit navigation controls */}
+            <OrbitControls
+              ref={controlsRef}
+              autoRotate={!buildingData}
+              autoRotateSpeed={0.4}
+              minDistance={10}
+              maxDistance={150}
+              enableDamping
+              dampingFactor={0.05}
             />
-          ) : (
-            <MockupWireframeMesh />
-          )}
-
-
-
-          {/* Orbit navigation controls */}
-          <OrbitControls
-            ref={controlsRef}
-            autoRotate={!buildingData}
-            autoRotateSpeed={0.4}
-            minDistance={10}
-            maxDistance={150}
-            enableDamping
-            dampingFactor={0.05}
-          />
-        </Canvas>
+          </Canvas>
+        </CanvasErrorBoundary>
       </div>
+
 
       {/* Overlay Status */}
       {isLoading && (

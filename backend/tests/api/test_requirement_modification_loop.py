@@ -28,5 +28,6 @@ def test_requirement_modification_loop_end_to_end():
     res_c = orchestrator.recompile_with_delta(res_b.session_id, delta_2)
     assert res_c.session_id != res_b.session_id
     assert res_c.extracted_intent.get("floor_allocation") == "ground_floor_only"
-    assert len(res_c.floors["1"].get("layout", {})) == 4
+    user_rooms_fl1 = [k for k in res_c.floors["1"].get("layout", {}) if not k.startswith("OTS")]
+    assert len(user_rooms_fl1) == 4
     assert len(res_c.floors.get("2", {}).get("layout", {})) == 0
