@@ -1,6 +1,6 @@
-# Uncharted | Constraint-Driven Building Compiler
+# BuildForgeAI | Constraint-Driven Building Compiler
 
-**Uncharted** is a spatial compiler that translates natural language requirements into 100% legally compliant, structurally validated, and ventilation-optimized 3D building blueprints for dense urban real estate.
+**BuildForgeAI** is a spatial compiler that translates natural language requirements into legally compliant, structurally validated, and ventilation-optimized 3D building blueprints for dense urban real estate.
 
 ---
 
